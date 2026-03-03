@@ -28,9 +28,9 @@ var setupCmd = &cobra.Command{
 Steps performed:
   1. Create ~/.rt/logs/ and ~/.local/bin/
   2. Write embedded hook.zsh and tools.conf to ~/.rt/
-  3. Copy this binary to ~/.rt/rtlog
-  4. Create symlink ~/.local/bin/rtlog -> ~/.rt/rtlog
-  5. Configure ~/.zshrc (PATH + hook source line)`,
+  3. Copy this binary to ~/.rt/rtlog  (skipped if already on PATH, e.g. go install)
+  4. Create symlink ~/.local/bin/rtlog  (skipped if already on PATH)
+  5. Configure ~/.zshrc (hook source line; PATH export only if symlink was created)`,
 	Args: cobra.NoArgs,
 	Run:  runSetup,
 }
@@ -54,6 +54,15 @@ func runSetup(cmd *cobra.Command, args []string) {
 	fmt.Println("=== Red Team Operation Logger - Setup ===")
 	fmt.Println()
 
+	if !isZshShell() {
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "unknown"
+		}
+		fmt.Printf("[!]  Current shell is %s — setup configures ~/.zshrc which may not be loaded\n", shell)
+		fmt.Println()
+	}
+
 	// 1. Create directories
 	setupCreateDir(logDir)
 	setupCreateDir(localBin)
@@ -62,14 +71,18 @@ func runSetup(cmd *cobra.Command, args []string) {
 	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"))
 	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"))
 
-	// 3. Copy self to ~/.rt/rtlog
-	setupCopySelf(filepath.Join(rtDir, "rtlog"))
-
-	// 4. Symlink ~/.local/bin/rtlog -> ~/.rt/rtlog
-	setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
+	// 3-4. Copy binary + symlink (skip if already on PATH, e.g. go install)
+	onPath := isOnPath()
+	addPathExport := false
+	if !onPath {
+		setupCopySelf(filepath.Join(rtDir, "rtlog"))
+		addPathExport = setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
+	} else {
+		fmt.Println("[ok] Binary already on PATH, skipping copy and symlink")
+	}
 
 	// 5. Configure ~/.zshrc
-	setupZshrc(zshrc, localBin, rtDir)
+	setupZshrc(zshrc, localBin, rtDir, addPathExport)
 
 	fmt.Println()
 	fmt.Println("=== Setup complete ===")
@@ -213,18 +226,19 @@ func setupCopySelf(dst string) {
 }
 
 // setupSymlink creates or updates a symlink.
-func setupSymlink(link, target string) {
+// Returns true if the symlink is in place, false if blocked by a regular file.
+func setupSymlink(link, target string) bool {
 	updated := false
 	if existing, err := os.Readlink(link); err == nil {
 		if existing == target {
 			fmt.Printf("[ok] Symlink exists: %s -> %s\n", link, target)
-			return
+			return true
 		}
 		os.Remove(link)
 		updated = true
 	} else if _, err := os.Stat(link); err == nil {
 		fmt.Printf("[!]  %s exists but is not a symlink, skipping\n", link)
-		return
+		return false
 	}
 
 	if err := os.Symlink(target, link); err != nil {
@@ -236,10 +250,49 @@ func setupSymlink(link, target string) {
 	} else {
 		fmt.Printf("[+]  Created symlink: %s -> %s\n", link, target)
 	}
+	return true
+}
+
+// collapseBlankLines reduces consecutive blank lines to a single blank line.
+func collapseBlankLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	prevBlank := false
+	for _, line := range lines {
+		blank := strings.TrimSpace(line) == ""
+		if blank && prevBlank {
+			continue
+		}
+		out = append(out, line)
+		prevBlank = blank
+	}
+	return out
+}
+
+// isZshShell checks if the user's login shell is zsh.
+func isZshShell() bool {
+	return filepath.Base(os.Getenv("SHELL")) == "zsh"
+}
+
+// isOnPath checks if the running binary's directory is already in $PATH.
+func isOnPath() bool {
+	self, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	self, _ = filepath.EvalSymlinks(self)
+	selfDir := filepath.Dir(self)
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		abs, err := filepath.Abs(dir)
+		if err == nil && abs == selfDir {
+			return true
+		}
+	}
+	return false
 }
 
 // setupZshrc ensures PATH and hook source lines are in .zshrc.
-func setupZshrc(zshrc, localBin, rtDir string) {
+// addPathExport controls whether the ~/.local/bin PATH export is added.
+func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
 	sourceLine := fmt.Sprintf("source %s/.rt/hook.zsh", "$HOME")
 
 	// Read existing content
@@ -253,32 +306,9 @@ func setupZshrc(zshrc, localBin, rtDir string) {
 	var newLines []string
 	hasPathExport := false
 	hasSourceLine := false
-	removedOld := false
 
-	for i, line := range lines {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-
-		// Remove old Python/repo hook source lines (not our .rt/ one)
-		if strings.Contains(trimmed, "source") && strings.Contains(trimmed, "hook.zsh") &&
-			!strings.Contains(trimmed, ".rt/hook.zsh") {
-			removedOld = true
-			continue
-		}
-
-		// Remove "# Red Team Operation Logger" comment only if followed by an old hook line
-		if trimmed == "# Red Team Operation Logger" {
-			nextIsOldHook := false
-			if i+1 < len(lines) {
-				next := strings.TrimSpace(lines[i+1])
-				nextIsOldHook = strings.Contains(next, "source") &&
-					strings.Contains(next, "hook.zsh") &&
-					!strings.Contains(next, ".rt/hook.zsh")
-			}
-			if nextIsOldHook {
-				removedOld = true
-				continue
-			}
-		}
 
 		// Check for existing PATH export
 		if strings.Contains(trimmed, `export PATH="$HOME/.local/bin`) {
@@ -293,16 +323,16 @@ func setupZshrc(zshrc, localBin, rtDir string) {
 		newLines = append(newLines, line)
 	}
 
-	if removedOld {
-		fmt.Println("[+]  Removed old hook source line(s) from .zshrc")
-	}
-
-	// Append PATH export if missing
-	if !hasPathExport {
-		newLines = append(newLines, "", `export PATH="$HOME/.local/bin:$PATH"`)
-		fmt.Printf("[+]  Added %s to PATH in .zshrc\n", localBin)
+	// Append PATH export if missing and needed (only when symlink was created)
+	if addPathExport {
+		if !hasPathExport {
+			newLines = append(newLines, "", `export PATH="$HOME/.local/bin:$PATH"`)
+			fmt.Printf("[+]  Added %s to PATH in .zshrc\n", localBin)
+		} else {
+			fmt.Printf("[ok] %s already in PATH\n", localBin)
+		}
 	} else {
-		fmt.Printf("[ok] %s already in PATH\n", localBin)
+		fmt.Println("[ok] Binary on PATH, skipping PATH export")
 	}
 
 	// Append source line if missing

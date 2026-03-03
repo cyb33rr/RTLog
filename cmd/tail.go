@@ -74,32 +74,43 @@ var tailCmd = &cobra.Command{
 		}
 		defer fTail.Close()
 
-		// Seek to end
-		fTail.Seek(0, io.SeekEnd)
+		// Seek to end and record position
+		pos, _ := fTail.Seek(0, io.SeekEnd)
 
-		reader := bufio.NewReader(fTail)
+		tailScanner := bufio.NewScanner(fTail)
+		tailScanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
 		for {
 			select {
 			case <-sigCh:
 				fmt.Println(display.Colorize("\nStopped.", display.Dim))
 				return
 			default:
-				line, err := reader.ReadString('\n')
-				if err != nil {
+				// Detect file truncation (e.g. after rtlog clear)
+				if info, err := fTail.Stat(); err == nil && info.Size() < pos {
+					fTail.Seek(0, io.SeekStart)
+					pos = 0
+					tailScanner = bufio.NewScanner(fTail)
+					tailScanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+				}
+
+				if tailScanner.Scan() {
+					line := strings.TrimSpace(tailScanner.Text())
+					// Track position after successful read
+					pos += int64(len(tailScanner.Bytes())) + 1
+					if line == "" {
+						continue
+					}
+					var entry logfile.LogEntry
+					if err := json.Unmarshal([]byte(line), &entry); err != nil {
+						continue
+					}
+					m := logfile.ToMap(entry)
+					fmt.Println(display.FmtEntry(m, 0, 0))
+				} else {
 					// No new data, sleep and retry
 					time.Sleep(500 * time.Millisecond)
-					continue
 				}
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-				var entry logfile.LogEntry
-				if err := json.Unmarshal([]byte(line), &entry); err != nil {
-					continue
-				}
-				m := logfile.ToMap(entry)
-				fmt.Println(display.FmtEntry(m, 0, 0))
 			}
 		}
 	},

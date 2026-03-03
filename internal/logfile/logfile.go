@@ -34,6 +34,28 @@ type LogEntry struct {
 // RE_JSON_CTRL matches JSON-illegal control characters (except \t, \n, \r).
 var RE_JSON_CTRL = regexp.MustCompile(`[\x00-\x08\x0b\x0c\x0e-\x1f]`)
 
+// reEngagementName allows alphanumeric, dots, hyphens, underscores; must start with alnum.
+var reEngagementName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// ValidateEngagementName checks that a name is safe for use as a filename.
+// Rejects empty strings, ".", "..", path separators, and names that don't
+// match the allowed pattern.
+func ValidateEngagementName(name string) error {
+	if name == "" {
+		return fmt.Errorf("engagement name cannot be empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("engagement name cannot be '.' or '..'")
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("engagement name cannot contain path separators")
+	}
+	if !reEngagementName.MatchString(name) {
+		return fmt.Errorf("engagement name must start with alphanumeric and contain only [a-zA-Z0-9._-]")
+	}
+	return nil
+}
+
 // LogDir returns the log directory path (~/.rt/logs/).
 func LogDir() string {
 	home, err := os.UserHomeDir()
@@ -190,6 +212,7 @@ func CountEntries(path string) int {
 
 	count := 0
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
 		if strings.TrimSpace(scanner.Text()) != "" {
 			count++

@@ -18,6 +18,11 @@ var newCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
 
+		if err := logfile.ValidateEngagementName(name); err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid engagement name: %v\n", err)
+			os.Exit(1)
+		}
+
 		dir := logfile.LogDir()
 		logPath := filepath.Join(dir, name+".jsonl")
 

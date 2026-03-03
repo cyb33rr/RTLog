@@ -19,6 +19,8 @@ func ExportMarkdown(entries []logfile.LogEntry) string {
 		ts := formatTS(e.Ts)
 		tool := e.Tool
 		cmd := escapePipe(e.Cmd)
+		cmd = strings.ReplaceAll(cmd, "`", "\\`")
+		cmd = strings.ReplaceAll(cmd, "\n", "<br>")
 		exit := fmt.Sprintf("%d", e.Exit)
 		dur := fmt.Sprintf("%g", e.Dur)
 		tag := e.Tag

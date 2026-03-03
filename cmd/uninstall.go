@@ -19,9 +19,10 @@ var uninstallCmd = &cobra.Command{
 	Short: "Remove rtlog from the system",
 	Long: `Remove rtlog installation artifacts:
 
-  1. Remove symlink ~/.local/bin/rtlog
-  2. Remove hook lines from ~/.zshrc
-  3. Optionally delete ~/.rt/ (prompts unless -y)`,
+  1. Remove symlink ~/.local/bin/rtlog (if present)
+  2. Remove hook and PATH export lines from ~/.zshrc
+  3. Optionally delete ~/.rt/ (prompts unless -y)
+  4. If installed via go install, advises how to remove the binary`,
 	Args: cobra.NoArgs,
 	Run:  runUninstall,
 }
@@ -55,6 +56,9 @@ func runUninstall(cmd *cobra.Command, args []string) {
 
 	// 3. Remove ~/.rt/ (prompt first)
 	uninstallRemoveDir(rtDir)
+
+	// 4. Advise on go install binary if applicable
+	uninstallAdviseGoInstall()
 
 	fmt.Println()
 	fmt.Println("=== Uninstall complete ===")
@@ -112,8 +116,14 @@ func uninstallCleanZshrc(zshrc string) {
 			continue
 		}
 
-		// Remove any hook.zsh source line (both old repo-based and ~/.rt/)
-		if strings.Contains(trimmed, "source") && strings.Contains(trimmed, "hook.zsh") {
+		// Remove our hook.zsh source line (only .rt/hook.zsh)
+		if strings.Contains(trimmed, "source") && strings.Contains(trimmed, ".rt/hook.zsh") {
+			removed = true
+			continue
+		}
+
+		// Remove PATH export added by setup
+		if trimmed == `export PATH="$HOME/.local/bin:$PATH"` {
 			removed = true
 			continue
 		}
@@ -125,6 +135,9 @@ func uninstallCleanZshrc(zshrc string) {
 		fmt.Println("[ok] No hook lines in .zshrc")
 		return
 	}
+
+	// Collapse consecutive blank lines left by removal
+	newLines = collapseBlankLines(newLines)
 
 	// Atomic write
 	newContent := strings.Join(newLines, "\n")
@@ -184,4 +197,36 @@ func uninstallRemoveDir(rtDir string) {
 		return
 	}
 	fmt.Printf("[-]  Removed %s\n", rtDir)
+}
+
+// uninstallAdviseGoInstall checks if the running binary lives in GOBIN/GOPATH
+// and advises the user to remove it manually.
+func uninstallAdviseGoInstall() {
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	self, _ = filepath.EvalSymlinks(self)
+	selfDir := filepath.Dir(self)
+
+	// Check against GOBIN or GOPATH/bin or ~/go/bin
+	gobin := os.Getenv("GOBIN")
+	if gobin != "" {
+		gobin, _ = filepath.Abs(gobin)
+	}
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			gopath = filepath.Join(home, "go")
+		}
+	}
+	gopathBin := ""
+	if gopath != "" {
+		gopathBin, _ = filepath.Abs(filepath.Join(gopath, "bin"))
+	}
+
+	if (gobin != "" && selfDir == gobin) || (gopathBin != "" && selfDir == gopathBin) {
+		fmt.Printf("[!]  Binary at %s was installed via 'go install'\n", self)
+		fmt.Println("     Remove it with: rm", self)
+	}
 }

@@ -233,13 +233,25 @@ _rtlog_precmd() {
     fi
     command rm -f "$_rtlog_tmpfile" 2>/dev/null
 
+    # Escape metadata fields that may contain quotes, backslashes, etc.
+    _rtlog_json_escape "$USER"
+    local escaped_user="$REPLY"
+    _rtlog_json_escape "${HOST:-$(hostname)}"
+    local escaped_host="$REPLY"
+    _rtlog_json_escape "$_rtlog_tty"
+    local escaped_tty="$REPLY"
+    _rtlog_json_escape "$PWD"
+    local escaped_cwd="$REPLY"
+    _rtlog_json_escape "$RTLOG_TAG"
+    local escaped_tag="$REPLY"
+
     # Ensure log directory exists
     [[ -d "$RTLOG_DIR" ]] || mkdir -p "$RTLOG_DIR"
 
     # Write JSONL entry (single line, everything inline)
     printf '{"ts":"%s","epoch":%d,"user":"%s","host":"%s","tty":"%s","cwd":"%s","tool":"%s","cmd":"%s","exit":%d,"dur":%s,"tag":"%s","note":"%s","out":"%s"}\n' \
-        "$ts" "$epoch" "$USER" "${HOST:-$(hostname)}" "$_rtlog_tty" "$PWD" \
-        "$_rtlog_pending_tool" "$escaped_cmd" "$rc" "$dur" "$RTLOG_TAG" "$escaped_note" "$escaped_out" \
+        "$ts" "$epoch" "$escaped_user" "$escaped_host" "$escaped_tty" "$escaped_cwd" \
+        "$_rtlog_pending_tool" "$escaped_cmd" "$rc" "$dur" "$escaped_tag" "$escaped_note" "$escaped_out" \
         >> "$RTLOG_DIR/${RTLOG_ENGAGEMENT}.jsonl"
 
     # Reset (note is one-shot — clear and write back to state file)

@@ -14,16 +14,14 @@ A CLI tool that automatically captures and logs shell commands during penetratio
 
 ## Install
 
+### Go Install
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cyb33rr/RTLog/main/install.sh | bash
+go install github.com/cyb33rr/rtlog@latest
+rtlog setup
 ```
 
-This detects your OS/architecture, downloads the binary, and runs `rtlog setup` which:
-- Creates `~/.rt/` directory structure
-- Installs the shell hook and tool list
-- Adds the hook source line to `~/.zshrc`
-
-### Build from source
+### Build from Source
 
 ```bash
 git clone https://github.com/cyb33rr/RTLog.git
@@ -31,6 +29,8 @@ cd RTLog
 make build      # produces ./rtlog
 ./rtlog setup
 ```
+
+`rtlog setup` creates `~/.rt/`, installs the shell hook and tool list, and adds the hook source line to `~/.zshrc`.
 
 ### Uninstall
 

@@ -52,7 +52,7 @@ var clearCmd = &cobra.Command{
 			}
 		}
 
-		if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+		if err := os.Truncate(path, 0); err != nil {
 			fmt.Fprintf(os.Stderr, "Error clearing log: %v\n", err)
 			os.Exit(1)
 		}

@@ -3,6 +3,7 @@ package logfile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -139,6 +140,54 @@ func TestEngagementName(t *testing.T) {
 		if got != tc.expected {
 			t.Errorf("EngagementName(%q) = %q, want %q", tc.input, got, tc.expected)
 		}
+	}
+}
+
+func TestValidateEngagementName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"my-engagement", false},
+		{"test_123", false},
+		{"Project.2024", false},
+		{"a", false},
+		{"", true},
+		{".", true},
+		{"..", true},
+		{"../../../etc/cron.d/evil", true},
+		{"/etc/passwd", true},
+		{".hidden", true},
+		{"_leading-underscore", true},
+		{"-leading-dash", true},
+		{"has spaces", true},
+		{"has\ttab", true},
+	}
+
+	for _, tc := range tests {
+		err := ValidateEngagementName(tc.name)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("ValidateEngagementName(%q) error = %v, wantErr %v", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func TestCountEntries_LargeLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "large.jsonl")
+
+	// Create a line exceeding the default 64KB scanner buffer
+	bigOut := strings.Repeat("A", 100*1024)
+	line := `{"ts":"2024-01-15T10:30:00Z","tool":"nmap","cmd":"nmap","exit":0,"dur":1,"out":"` + bigOut + `"}` + "\n"
+	line += `{"ts":"2024-01-15T10:31:00Z","tool":"curl","cmd":"curl","exit":0,"dur":1}` + "\n"
+
+	if err := os.WriteFile(path, []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	count := CountEntries(path)
+	if count != 2 {
+		t.Errorf("CountEntries with 100KB line: got %d, want 2", count)
 	}
 }
 
