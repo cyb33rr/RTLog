@@ -111,6 +111,7 @@ _rtlog_preexec() {
 
     while (( ${#words} > 0 )); do
         case "${words[1]}" in
+            *=*) shift words ;;   # skip inline env var assignments (e.g. KRB5CCNAME=ticket.ccache)
             sudo|nohup|time|env|command|exec|nice|ionice|strace|ltrace|proxychains|proxychains4|tsocks)
                 shift words ;;
             *) break ;;
