@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
+
+	"github.com/cyb33rr/rtlog/internal/timeutil"
 )
 
 // LogEntry mirrors the fields needed for formatting. We accept a map to avoid
@@ -24,7 +25,7 @@ func FmtEntry(entry Entry, index, idxWidth int) string {
 
 	// Command - collapse newlines
 	cmd := getString(entry, "cmd", "")
-	cmd = strings.Join(strings.Split(cmd, "\n"), " ")
+	cmd = strings.ReplaceAll(cmd, "\n", " ")
 
 	// Exit code
 	exitCode := getInt(entry, "exit", -1)
@@ -65,13 +66,12 @@ func FmtEntry(entry Entry, index, idxWidth int) string {
 	return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s%s%s", idxStr, tsStr, toolStr, cmd, exitStr, durStr, tagStr, noteStr, outIndicator)
 }
 
-// FmtEntryHighlight formats an entry then highlights keyword matches.
-func FmtEntryHighlight(entry Entry, keyword string, index, idxWidth int) string {
+// FmtEntryHighlight formats an entry then highlights pattern matches.
+func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int) string {
 	line := FmtEntry(entry, index, idxWidth)
-	if keyword == "" {
+	if pattern == nil {
 		return line
 	}
-	pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(keyword))
 	if IsTTY {
 		return pattern.ReplaceAllStringFunc(line, func(match string) string {
 			return Magenta + Bold + match + Reset
@@ -103,17 +103,8 @@ func formatTimestamp(tsRaw string) string {
 	if tsRaw == "" {
 		return ""
 	}
-	// Try parsing as ISO 8601
-	for _, layout := range []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05Z07:00",
-	} {
-		if t, err := time.Parse(layout, tsRaw); err == nil {
-			return t.Format("15:04:05")
-		}
+	if t, err := timeutil.Parse(tsRaw); err == nil {
+		return t.Format("15:04:05")
 	}
 	// Fallback: first 8 chars
 	if len(tsRaw) >= 8 {

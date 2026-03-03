@@ -2,7 +2,6 @@ package extract
 
 import (
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -53,23 +52,34 @@ var (
 	)
 )
 
+// Pre-compiled per-tool credential regexes (keyed by tool name).
+var toolCredRegexes map[string]map[string]*regexp.Regexp
+
 func init() {
 	RE_LONG_USER = BuildFlagRegex(longUserFlags)
 	RE_LONG_PASS = BuildFlagRegex(longPassFlags)
+	RE_LONG_HASH = BuildHashFlagRegex(longHashFlags)
 
-	// Build RE_LONG_HASH with hex-value pattern instead of generic \S+.
-	sorted := make([]string, len(longHashFlags))
-	copy(sorted, longHashFlags)
-	sort.Slice(sorted, func(i, j int) bool {
-		return len(sorted[i]) > len(sorted[j])
-	})
-	escaped := make([]string, len(sorted))
-	for i, f := range sorted {
-		escaped[i] = regexp.QuoteMeta(f)
+	// Pre-compile per-tool credential regexes.
+	toolCredRegexes = make(map[string]map[string]*regexp.Regexp, len(TOOL_CRED_MAP))
+	for tool, flags := range TOOL_CRED_MAP {
+		roleFlags := map[string][]string{"user": {}, "pass": {}, "hash": {}}
+		for flag, role := range flags {
+			roleFlags[role] = append(roleFlags[role], flag)
+		}
+		rxMap := make(map[string]*regexp.Regexp)
+		for role, fl := range roleFlags {
+			if len(fl) == 0 {
+				continue
+			}
+			if role == "hash" {
+				rxMap[role] = BuildHashFlagRegex(fl)
+			} else {
+				rxMap[role] = BuildFlagRegex(fl)
+			}
+		}
+		toolCredRegexes[tool] = rxMap
 	}
-	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
-		`([A-Fa-f0-9]{16,64}(?::[A-Fa-f0-9]{16,64})?)`
-	RE_LONG_HASH = regexp.MustCompile(pattern)
 }
 
 // getToolCredFlags returns the credential flag map for a tool.
@@ -131,35 +141,13 @@ func ExtractCreds(cmd, tool string) *CredResult {
 	}
 
 	// Pass 5: Per-tool short flags (only for known tools)
-	toolFlags := getToolCredFlags(tool)
-	if len(toolFlags) > 0 {
-		roleFlags := map[string][]string{"user": {}, "pass": {}, "hash": {}}
-		for flag, role := range toolFlags {
-			roleFlags[role] = append(roleFlags[role], flag)
-		}
-
-		for role, flags := range roleFlags {
-			if len(flags) == 0 {
-				continue
-			}
+	if rxMap, ok := toolCredRegexes[tool]; ok {
+		for role, rx := range rxMap {
 			if role == "hash" {
-				sorted := make([]string, len(flags))
-				copy(sorted, flags)
-				sort.Slice(sorted, func(i, j int) bool {
-					return len(sorted[i]) > len(sorted[j])
-				})
-				escaped := make([]string, len(sorted))
-				for i, f := range sorted {
-					escaped[i] = regexp.QuoteMeta(f)
-				}
-				pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
-					`([A-Fa-f0-9]{16,64}(?::[A-Fa-f0-9]{16,64})?)`
-				rx := regexp.MustCompile(pattern)
 				for _, m := range rx.FindAllStringSubmatch(cmd, -1) {
 					result.Hashes.Add(m[1])
 				}
 			} else {
-				rx := BuildFlagRegex(flags)
 				for _, m := range rx.FindAllStringSubmatch(cmd, -1) {
 					val := StripQuotes(m[1])
 					if len(val) > 1 && !IsFileLike(val) {

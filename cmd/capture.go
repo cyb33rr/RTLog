@@ -25,7 +25,7 @@ var captureCmd = &cobra.Command{
 			if toggle == "off" {
 				val = "0"
 			}
-			if _, err := state.UpdateState(map[string]string{"capture": val}); err != nil {
+			if _, err := state.UpdateState(map[string]string{state.KeyCapture: val}); err != nil {
 				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 				os.Exit(1)
 			}
@@ -39,7 +39,7 @@ var captureCmd = &cobra.Command{
 
 		// No args: show current state
 		st := state.ReadState()
-		val := st["capture"]
+		val := st[state.KeyCapture]
 		label := "on"
 		if val != "1" {
 			label = "off"

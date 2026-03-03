@@ -77,10 +77,8 @@ func (pt *PositionTracker) Claim(start, end int) bool {
 	return true
 }
 
-// BuildFlagRegex builds a compiled regex matching sorted flags (longest-first)
-// followed by a value. For Go RE2 (no backreferences), captures \S+ and the
-// caller should use StripQuotes on the result.
-func BuildFlagRegex(flags []string) *regexp.Regexp {
+// sortAndEscapeFlags returns flags sorted longest-first and regex-escaped.
+func sortAndEscapeFlags(flags []string) []string {
 	sorted := make([]string, len(flags))
 	copy(sorted, flags)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -90,7 +88,24 @@ func BuildFlagRegex(flags []string) *regexp.Regexp {
 	for i, f := range sorted {
 		escaped[i] = regexp.QuoteMeta(f)
 	}
+	return escaped
+}
+
+// BuildFlagRegex builds a compiled regex matching sorted flags (longest-first)
+// followed by a value. For Go RE2 (no backreferences), captures \S+ and the
+// caller should use StripQuotes on the result.
+func BuildFlagRegex(flags []string) *regexp.Regexp {
+	escaped := sortAndEscapeFlags(flags)
 	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)(\S+)`
+	return regexp.MustCompile(pattern)
+}
+
+// BuildHashFlagRegex builds a compiled regex matching sorted flags followed by
+// a hex hash value (16-64 chars, optionally colon-separated halves).
+func BuildHashFlagRegex(flags []string) *regexp.Regexp {
+	escaped := sortAndEscapeFlags(flags)
+	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
+		`([A-Fa-f0-9]{16,64}(?::[A-Fa-f0-9]{16,64})?)`
 	return regexp.MustCompile(pattern)
 }
 

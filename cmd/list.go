@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,12 +22,12 @@ var listCmd = &cobra.Command{
 		}
 
 		st := state.ReadState()
-		active := st["engagement"]
+		active := st[state.KeyEngagement]
 
 		fmt.Println(display.Colorize("--- Engagements ---", display.Bold))
 		for _, f := range files {
 			name := logfile.EngagementName(f)
-			count := countLines(f)
+			count := logfile.CountEntries(f)
 			marker := ""
 			if name == active {
 				marker = display.Colorize(" *", display.Green)
@@ -38,24 +35,6 @@ var listCmd = &cobra.Command{
 			fmt.Printf("  %s%s  (%d entries)\n", name, marker, count)
 		}
 	},
-}
-
-// countLines counts non-empty lines in a file.
-func countLines(path string) int {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-
-	count := 0
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) != "" {
-			count++
-		}
-	}
-	return count
 }
 
 func init() {

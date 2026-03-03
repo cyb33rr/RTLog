@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cyb33rr/rtlog/internal/timeutil"
 )
 
 // LogEntry represents a single logged command.
@@ -99,16 +101,8 @@ func parseDate(ts string) (string, error) {
 	if ts == "" {
 		return "", fmt.Errorf("empty timestamp")
 	}
-	for _, layout := range []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05Z07:00",
-	} {
-		if t, err := time.Parse(layout, ts); err == nil {
-			return t.Format("2006-01-02"), nil
-		}
+	if t, err := timeutil.Parse(ts); err == nil {
+		return t.Format("2006-01-02"), nil
 	}
 	// Try extracting date prefix directly
 	if len(ts) >= 10 {
@@ -157,46 +151,51 @@ func AvailableEngagements() []string {
 func GetLogPath(engagement string) string {
 	dir := LogDir()
 
-	// Check directory exists
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Log directory not found: %s\n", dir)
-		fmt.Fprintln(os.Stderr, "Create it with: mkdir -p ~/.rt/logs/")
+	if engagement != "" {
+		// Try direct path first (O(1) instead of listing all files)
+		candidate := filepath.Join(dir, engagement+".jsonl")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+
+		// Not found - list available for error message
+		files := AvailableEngagements()
+		fmt.Fprintf(os.Stderr, "Engagement '%s' not found.\n", engagement)
+		if len(files) > 0 {
+			fmt.Fprintln(os.Stderr, "Available engagements:")
+			for _, f := range files {
+				fmt.Fprintf(os.Stderr, "  %s\n", EngagementName(f))
+			}
+		}
 		os.Exit(1)
 	}
 
 	files := AvailableEngagements()
 	if len(files) == 0 {
 		fmt.Fprintf(os.Stderr, "No .jsonl log files found in %s\n", dir)
+		fmt.Fprintln(os.Stderr, "Create one with: rtlog new <name>")
 		os.Exit(1)
 	}
 
-	if engagement == "" {
-		return files[0]
-	}
+	return files[0]
+}
 
-	// Try exact stem match
-	for _, f := range files {
-		stem := strings.TrimSuffix(filepath.Base(f), ".jsonl")
-		if stem == engagement {
-			return f
+// CountEntries counts non-empty lines in a JSONL file without deserializing.
+func CountEntries(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	count := 0
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) != "" {
+			count++
 		}
 	}
-
-	// Try with .jsonl appended
-	candidate := filepath.Join(dir, engagement+".jsonl")
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
-	}
-
-	// Not found - list available
-	fmt.Fprintf(os.Stderr, "Engagement '%s' not found.\n", engagement)
-	fmt.Fprintln(os.Stderr, "Available engagements:")
-	for _, f := range files {
-		stem := strings.TrimSuffix(filepath.Base(f), ".jsonl")
-		fmt.Fprintf(os.Stderr, "  %s\n", stem)
-	}
-	os.Exit(1)
-	return "" // unreachable
+	return count
 }
 
 // EngagementName extracts the stem name from a .jsonl path.

@@ -16,24 +16,24 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		st := state.ReadState()
 
-		eng := st["engagement"]
+		eng := st[state.KeyEngagement]
 		if eng == "" {
 			eng = "(none)"
 		}
-		tag := st["tag"]
+		tag := st[state.KeyTag]
 		if tag == "" {
 			tag = "(none)"
 		}
-		note := st["note"]
+		note := st[state.KeyNote]
 		if note == "" {
 			note = "(none)"
 		}
 		enabled := "on"
-		if st["enabled"] != "1" {
+		if st[state.KeyEnabled] != "1" {
 			enabled = "off"
 		}
 		capture := "on"
-		if st["capture"] != "1" {
+		if st[state.KeyCapture] != "1" {
 			capture = "off"
 		}
 

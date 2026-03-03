@@ -14,7 +14,7 @@ var onCmd = &cobra.Command{
 	Short: "Enable logging",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if _, err := state.UpdateState(map[string]string{"enabled": "1"}); err != nil {
+		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "1"}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
 		}
@@ -27,7 +27,7 @@ var offCmd = &cobra.Command{
 	Short: "Disable logging",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if _, err := state.UpdateState(map[string]string{"enabled": "0"}); err != nil {
+		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "0"}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
 		}

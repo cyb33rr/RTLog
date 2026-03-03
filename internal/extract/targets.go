@@ -2,7 +2,6 @@ package extract
 
 import (
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -72,15 +71,7 @@ var FILE_EXTENSIONS = map[string]struct{}{
 
 func init() {
 	// Build RE_FLAG_HOST from targetFlags sorted longest-first.
-	sorted := make([]string, len(targetFlags))
-	copy(sorted, targetFlags)
-	sort.Slice(sorted, func(i, j int) bool {
-		return len(sorted[i]) > len(sorted[j])
-	})
-	escaped := make([]string, len(sorted))
-	for i, f := range sorted {
-		escaped[i] = regexp.QuoteMeta(f)
-	}
+	escaped := sortAndEscapeFlags(targetFlags)
 	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
 		`(?:https?://)?([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))` +
 		`(?::(\d{1,5}))?`
@@ -185,42 +176,12 @@ func CredValueSpans(cmd, tool string) *PositionTracker {
 		}
 	}
 
-	// Per-tool short credential flags
-	toolFlags := getToolCredFlags(tool)
-	if len(toolFlags) > 0 {
-		roleFlags := map[string][]string{"user": {}, "pass": {}, "hash": {}}
-		for flag, role := range toolFlags {
-			roleFlags[role] = append(roleFlags[role], flag)
-		}
-
-		for role, flags := range roleFlags {
-			if len(flags) == 0 {
-				continue
-			}
-			if role == "hash" {
-				sorted := make([]string, len(flags))
-				copy(sorted, flags)
-				sort.Slice(sorted, func(i, j int) bool {
-					return len(sorted[i]) > len(sorted[j])
-				})
-				escaped := make([]string, len(sorted))
-				for i, f := range sorted {
-					escaped[i] = regexp.QuoteMeta(f)
-				}
-				pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
-					`([A-Fa-f0-9]{16,64}(?::[A-Fa-f0-9]{16,64})?)`
-				rx := regexp.MustCompile(pattern)
-				for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
-					if m[2] >= 0 && m[3] >= 0 {
-						pt.Mark(m[2], m[3])
-					}
-				}
-			} else {
-				rx := BuildFlagRegex(flags)
-				for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
-					if m[2] >= 0 && m[3] >= 0 {
-						pt.Mark(m[2], m[3])
-					}
+	// Per-tool short credential flags (pre-compiled)
+	if rxMap, ok := toolCredRegexes[tool]; ok {
+		for _, rx := range rxMap {
+			for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
+				if m[2] >= 0 && m[3] >= 0 {
+					pt.Mark(m[2], m[3])
 				}
 			}
 		}

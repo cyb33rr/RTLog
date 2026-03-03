@@ -5,10 +5,10 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
+	"github.com/cyb33rr/rtlog/internal/timeutil"
 	"github.com/spf13/cobra"
 )
 
@@ -76,7 +76,7 @@ var timelineCmd = &cobra.Command{
 				fmt.Println(display.Colorize(fmt.Sprintf("  [%s]", tag), display.Yellow))
 				for _, entry := range byTag[tag] {
 					tsStr := formatTimeOnly(entry.Ts)
-					cmdStr := strings.Join(strings.Split(entry.Cmd, "\n"), " ")
+					cmdStr := strings.ReplaceAll(entry.Cmd, "\n", " ")
 					dur := entry.Dur
 					exitCode := entry.Exit
 					exitColor := display.Green
@@ -109,16 +109,8 @@ func parseEntryDate(ts string) string {
 	if ts == "" {
 		return ""
 	}
-	for _, layout := range []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05Z07:00",
-	} {
-		if t, err := time.Parse(layout, ts); err == nil {
-			return t.Format("2006-01-02")
-		}
+	if t, err := timeutil.Parse(ts); err == nil {
+		return t.Format("2006-01-02")
 	}
 	if len(ts) >= 10 {
 		return ts[:10]
@@ -131,16 +123,8 @@ func formatTimeOnly(ts string) string {
 	if ts == "" {
 		return ""
 	}
-	for _, layout := range []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05Z07:00",
-	} {
-		if t, err := time.Parse(layout, ts); err == nil {
-			return t.Format("15:04:05")
-		}
+	if t, err := timeutil.Parse(ts); err == nil {
+		return t.Format("15:04:05")
 	}
 	if len(ts) >= 8 {
 		return ts[:8]

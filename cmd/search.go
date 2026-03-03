@@ -24,14 +24,11 @@ var searchCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		searchFields := []string{"cmd", "tool", "cwd", "tag", "note", "user", "host"}
 		pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(keyword))
 
 		var matches []logfile.LogEntry
 		for _, entry := range entries {
-			m := logfile.ToMap(entry)
-			for _, field := range searchFields {
-				val, _ := m[field].(string)
+			for _, val := range []string{entry.Cmd, entry.Tool, entry.Cwd, entry.Tag, entry.Note, entry.User, entry.Host} {
 				if val != "" && pattern.MatchString(val) {
 					matches = append(matches, entry)
 					break
@@ -52,7 +49,7 @@ var searchCmd = &cobra.Command{
 		idxWidth := len(fmt.Sprintf("%d", len(matches)))
 		for i, entry := range matches {
 			m := logfile.ToMap(entry)
-			fmt.Println(display.FmtEntryHighlight(m, keyword, i+1, idxWidth))
+			fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth))
 		}
 
 		// Print match count summary

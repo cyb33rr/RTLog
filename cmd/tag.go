@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -22,7 +21,7 @@ var tagCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if tagClear {
-			if _, err := state.UpdateState(map[string]string{"tag": ""}); err != nil {
+			if _, err := state.UpdateState(map[string]string{state.KeyTag: ""}); err != nil {
 				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 				os.Exit(1)
 			}
@@ -36,7 +35,7 @@ var tagCmd = &cobra.Command{
 		}
 
 		if len(args) > 0 {
-			if _, err := state.UpdateState(map[string]string{"tag": args[0]}); err != nil {
+			if _, err := state.UpdateState(map[string]string{state.KeyTag: args[0]}); err != nil {
 				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 				os.Exit(1)
 			}
@@ -46,7 +45,7 @@ var tagCmd = &cobra.Command{
 
 		// No args: show current tag
 		st := state.ReadState()
-		tag := st["tag"]
+		tag := st[state.KeyTag]
 		if tag == "" {
 			tag = "(none)"
 		}
@@ -55,18 +54,7 @@ var tagCmd = &cobra.Command{
 }
 
 func listTags() {
-	st := state.ReadState()
-	eng := st["engagement"]
-	if eng == "" {
-		fmt.Fprintln(os.Stderr, "No active engagement.")
-		os.Exit(1)
-	}
-
-	logPath := filepath.Join(logfile.LogDir(), eng+".jsonl")
-	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "No log file for '%s'.\n", eng)
-		os.Exit(1)
-	}
+	logPath := logfile.GetLogPath(engagementFlag)
 
 	entries, err := logfile.LoadEntries(logPath, nil)
 	if err != nil {
@@ -99,7 +87,7 @@ func listTags() {
 		return sorted[i].Tag < sorted[j].Tag
 	})
 
-	fmt.Println(display.Colorize(fmt.Sprintf("--- Tags in %s ---", eng), display.Bold))
+	fmt.Println(display.Colorize(fmt.Sprintf("--- Tags in %s ---", logfile.EngagementName(logPath)), display.Bold))
 	for _, tc := range sorted {
 		fmt.Printf("  %8s  %s\n", display.Colorize(fmt.Sprintf("%d", tc.Count), display.Cyan), tc.Tag)
 	}

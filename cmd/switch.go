@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -29,13 +30,13 @@ var switchCmd = &cobra.Command{
 				for i, f := range files {
 					names[i] = logfile.EngagementName(f)
 				}
-				fmt.Fprintf(os.Stderr, "Available: %s\n", joinComma(names))
+				fmt.Fprintf(os.Stderr, "Available: %s\n", strings.Join(names, ", "))
 			}
 			os.Exit(1)
 		}
 
 		if _, err := state.UpdateState(map[string]string{
-			"engagement": name,
+			state.KeyEngagement: name,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
@@ -43,17 +44,6 @@ var switchCmd = &cobra.Command{
 
 		fmt.Printf("[rtlog] Switched to: %s\n", name)
 	},
-}
-
-func joinComma(ss []string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += ", "
-		}
-		result += s
-	}
-	return result
 }
 
 func init() {

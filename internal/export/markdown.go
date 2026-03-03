@@ -3,9 +3,9 @@ package export
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/cyb33rr/rtlog/internal/logfile"
+	"github.com/cyb33rr/rtlog/internal/timeutil"
 )
 
 // ExportMarkdown renders entries as a Markdown table.
@@ -34,16 +34,8 @@ func ExportMarkdown(entries []logfile.LogEntry) string {
 
 // formatTS converts an ISO timestamp to "YYYY-MM-DD HH:MM:SS".
 func formatTS(ts string) string {
-	for _, layout := range []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05Z07:00",
-	} {
-		if t, err := time.Parse(layout, ts); err == nil {
-			return t.Format("2006-01-02 15:04:05")
-		}
+	if t, err := timeutil.Parse(ts); err == nil {
+		return t.Format("2006-01-02 15:04:05")
 	}
 	return ts
 }

@@ -19,11 +19,6 @@ var showCmd = &cobra.Command{
 	Short: "Pretty-print log entries",
 	Long:  "Display log entries in a human-readable format, optionally filtered by date.",
 	Run: func(cmd *cobra.Command, args []string) {
-		if showToday && showDate != "" {
-			fmt.Fprintln(os.Stderr, "Cannot use --today and --date together")
-			os.Exit(1)
-		}
-
 		path := logfile.GetLogPath(engagementFlag)
 
 		var dateFilter *time.Time

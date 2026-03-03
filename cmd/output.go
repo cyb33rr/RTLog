@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
@@ -46,7 +47,7 @@ var outputCmd = &cobra.Command{
 		fmt.Println(display.FmtEntry(m, idx, idxWidth))
 
 		text := entry.Out
-		if text == "" || len(trimSpace(text)) == 0 {
+		if strings.TrimSpace(text) == "" {
 			fmt.Println(display.Colorize("  (no captured output)", display.Dim))
 			return
 		}
@@ -61,15 +62,6 @@ var outputCmd = &cobra.Command{
 			fmt.Println()
 		}
 	},
-}
-
-func trimSpace(s string) string {
-	for _, r := range s {
-		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
-			return s
-		}
-	}
-	return ""
 }
 
 func init() {

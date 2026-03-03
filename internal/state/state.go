@@ -6,16 +6,25 @@ import (
 	"strings"
 )
 
+// State key constants.
+const (
+	KeyEngagement = "engagement"
+	KeyTag        = "tag"
+	KeyNote       = "note"
+	KeyEnabled    = "enabled"
+	KeyCapture    = "capture"
+)
+
 // StateKeyOrder defines the canonical ordering of keys in the state file.
-var StateKeyOrder = []string{"engagement", "tag", "note", "enabled", "capture"}
+var StateKeyOrder = []string{KeyEngagement, KeyTag, KeyNote, KeyEnabled, KeyCapture}
 
 // StateDefaults provides default values for each state key.
 var StateDefaults = map[string]string{
-	"engagement": "",
-	"tag":        "",
-	"note":       "",
-	"enabled":    "1",
-	"capture":    "1",
+	KeyEngagement: "",
+	KeyTag:        "",
+	KeyNote:       "",
+	KeyEnabled:    "1",
+	KeyCapture:    "1",
 }
 
 // statePath returns the path to the state file (~/.rt/state).

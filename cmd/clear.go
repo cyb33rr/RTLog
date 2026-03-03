@@ -25,17 +25,11 @@ var clearCmd = &cobra.Command{
 		eng := engagementFlag
 		if eng == "" {
 			st := state.ReadState()
-			eng = st["engagement"]
+			eng = st[state.KeyEngagement]
 		}
 
 		path := logfile.GetLogPath(eng)
-		entries, err := logfile.LoadEntries(path, nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
-			os.Exit(1)
-		}
-
-		count := len(entries)
+		count := logfile.CountEntries(path)
 		name := logfile.EngagementName(path)
 
 		if count == 0 {

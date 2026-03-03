@@ -21,34 +21,32 @@ var newCmd = &cobra.Command{
 		dir := logfile.LogDir()
 		logPath := filepath.Join(dir, name+".jsonl")
 
-		// Check if engagement already exists
-		if _, err := os.Stat(logPath); err == nil {
-			fmt.Fprintf(os.Stderr, "Engagement '%s' already exists.\n", name)
-			os.Exit(1)
-		}
-
-		// Update state: set engagement, clear tag and note
-		if _, err := state.UpdateState(map[string]string{
-			"engagement": name,
-			"tag":        "",
-			"note":       "",
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Create log directory and file
+		// Create log directory and file atomically
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
 			os.Exit(1)
 		}
 
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating log file: %v\n", err)
+			if os.IsExist(err) {
+				fmt.Fprintf(os.Stderr, "Engagement '%s' already exists.\n", name)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error creating log file: %v\n", err)
+			}
 			os.Exit(1)
 		}
 		f.Close()
+
+		// Update state: set engagement, clear tag and note
+		if _, err := state.UpdateState(map[string]string{
+			state.KeyEngagement: name,
+			state.KeyTag:        "",
+			state.KeyNote:       "",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
+			os.Exit(1)
+		}
 
 		fmt.Printf("[rtlog] Engagement: %s -> %s\n", name, logPath)
 	},

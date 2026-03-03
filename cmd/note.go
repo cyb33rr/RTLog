@@ -16,7 +16,7 @@ var noteCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		text := strings.Join(args, " ")
-		if _, err := state.UpdateState(map[string]string{"note": text}); err != nil {
+		if _, err := state.UpdateState(map[string]string{state.KeyNote: text}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
 		}
