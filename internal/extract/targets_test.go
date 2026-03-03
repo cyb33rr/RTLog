@@ -151,3 +151,102 @@ func TestExtractTargetsMultipleIPs(t *testing.T) {
 		t.Errorf("expected 3 IPs, got %d: %v", result.IPs.Len(), result.IPs)
 	}
 }
+
+// --- Tool-specific false-positive prevention tests ---
+
+func TestExtractTargetsHashcatNoBareIP(t *testing.T) {
+	result := ExtractTargets("hashcat -m 1000 hash.txt", "hashcat")
+	if result.IPs.Len() > 0 {
+		t.Errorf("hashcat should not extract any IPs, got %v", result.IPs)
+	}
+	if result.Hosts.Len() > 0 {
+		t.Errorf("hashcat should not extract any hosts, got %v", result.Hosts)
+	}
+}
+
+func TestExtractTargetsJohnNoBareIP(t *testing.T) {
+	result := ExtractTargets("john --wordlist=rockyou.txt hash.txt", "john")
+	if result.IPs.Len() > 0 {
+		t.Errorf("john should not extract any IPs, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsResponderNoTarget(t *testing.T) {
+	result := ExtractTargets("responder -I eth0", "responder")
+	if result.IPs.Len() > 0 {
+		t.Errorf("responder -I should not extract targets, got IPs %v", result.IPs)
+	}
+	if result.Hosts.Len() > 0 {
+		t.Errorf("responder -I should not extract targets, got hosts %v", result.Hosts)
+	}
+}
+
+func TestExtractTargetsEvilWinrmFlagIP(t *testing.T) {
+	result := ExtractTargets("evil-winrm -i 10.10.10.5 -u admin", "evil-winrm")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("expected IP 10.10.10.5 from -i flag, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsGobusterFlagURL(t *testing.T) {
+	result := ExtractTargets("gobuster dir -u http://target.com -w wl.txt", "gobuster")
+	if !result.Hosts.Has("target.com") {
+		t.Errorf("expected host target.com from -u flag, got %v", result.Hosts)
+	}
+}
+
+func TestExtractTargetsNiktoFlagHost(t *testing.T) {
+	result := ExtractTargets("nikto -h 10.10.10.5", "nikto")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("expected IP 10.10.10.5 from -h flag, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsFfufFlagURL(t *testing.T) {
+	result := ExtractTargets("ffuf -u http://target.com/FUZZ -w wl.txt", "ffuf")
+	if !result.Hosts.Has("target.com") {
+		t.Errorf("expected host target.com from -u flag, got %v", result.Hosts)
+	}
+}
+
+func TestExtractTargetsNxcPositional(t *testing.T) {
+	result := ExtractTargets("nxc smb 10.10.10.5 -u admin -p pass", "nxc")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("expected positional IP 10.10.10.5, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsImpacketInline(t *testing.T) {
+	result := ExtractTargets("DOMAIN/admin:pass@10.10.10.5", "impacket-psexec")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("expected IP 10.10.10.5 from inline pattern, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsUnknownToolPermissive(t *testing.T) {
+	result := ExtractTargets("customtool 10.10.10.5", "")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("unknown tool should extract bare IP, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsGlobalLongFlag(t *testing.T) {
+	result := ExtractTargets("sometool --target 10.10.10.5", "sometool")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("global --target flag should extract IP, got %v", result.IPs)
+	}
+}
+
+func TestExtractTargetsSearchsploitNoTarget(t *testing.T) {
+	result := ExtractTargets("searchsploit apache 2.4.49", "searchsploit")
+	if result.IPs.Len() > 0 || result.Hosts.Len() > 0 {
+		t.Errorf("searchsploit should not extract targets, got IPs=%v hosts=%v", result.IPs, result.Hosts)
+	}
+}
+
+func TestExtractTargetsNmapPositionalTarget(t *testing.T) {
+	result := ExtractTargets("nmap -sV -p 80 10.10.10.5", "nmap")
+	if !result.IPs.Has("10.10.10.5") {
+		t.Errorf("nmap should extract positional IP, got %v", result.IPs)
+	}
+}

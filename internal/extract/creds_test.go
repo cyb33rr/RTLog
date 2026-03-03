@@ -139,3 +139,38 @@ func TestExtractCredsRusthoundLongFlags(t *testing.T) {
 		t.Errorf("expected password secret, got %v", result.Passwords)
 	}
 }
+
+// --- Tool-specific false-positive prevention tests ---
+
+func TestExtractCredsHashcatNoCredExtract(t *testing.T) {
+	// hashcat --user is a boolean flag, should not extract -m as username
+	result := ExtractCreds("hashcat --user -m 1000 hash.txt", "hashcat")
+	if result.Users.Len() > 0 {
+		t.Errorf("hashcat should not extract any users, got %v", result.Users)
+	}
+}
+
+func TestExtractCredsJohnNoCredExtract(t *testing.T) {
+	result := ExtractCreds("john --user hash.txt", "john")
+	if result.Users.Len() > 0 {
+		t.Errorf("john should not extract any users, got %v", result.Users)
+	}
+}
+
+func TestExtractCredsNmapNoCredExtract(t *testing.T) {
+	// nmap doesn't use --user for credentials
+	result := ExtractCreds("nmap --user admin 10.10.10.5", "nmap")
+	if result.Users.Len() > 0 {
+		t.Errorf("nmap should not extract credentials, got %v", result.Users)
+	}
+}
+
+func TestExtractCredsImpacketInlineCreds(t *testing.T) {
+	result := ExtractCreds("DOMAIN/admin:P@ss@10.10.10.5", "impacket-psexec")
+	if !result.Users.Has("admin") {
+		t.Errorf("expected user admin from inline pattern, got %v", result.Users)
+	}
+	if !result.Passwords.Has("P@ss") {
+		t.Errorf("expected password P@ss from inline pattern, got %v", result.Passwords)
+	}
+}

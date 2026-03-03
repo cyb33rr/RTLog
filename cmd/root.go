@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/cyb33rr/rtlog/internal/extract"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +27,16 @@ If no engagement is specified with -e, the most recently modified file is used.`
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&engagementFlag, "engagement", "e", "", "engagement name (defaults to most recent)")
+
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil // non-fatal
+		}
+		configPath := filepath.Join(home, ".rt", "extract.conf")
+		_ = extract.LoadUserConfig(configPath)
+		return nil
+	}
 }
 
 // Execute runs the root command.

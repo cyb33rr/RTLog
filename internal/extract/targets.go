@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// hostOrIP matches either a bare IPv4 address or an FQDN hostname.
+// IP branch comes first to prevent the FQDN branch from consuming digits.
+const hostOrIP = `(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}` +
+	`|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,})`
+
 // Compiled regex patterns for target extraction.
 var (
 	// RE_IPV4_EXT matches IPv4 with optional /CIDR and :port.
@@ -17,19 +22,19 @@ var (
 
 	// RE_USER_AT_HOST matches user@host and domain/user@host patterns.
 	RE_USER_AT_HOST = regexp.MustCompile(
-		`(?:[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+@([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))`,
+		`(?:[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+@(` + hostOrIP + `)`,
 	)
 
 	// RE_UNC_HOST matches UNC paths: \\host\share and //host/share.
 	RE_UNC_HOST = regexp.MustCompile(
-		`(?:\\\\|//)([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))[/\\]`,
+		`(?:\\\\|//)(` + hostOrIP + `)[/\\]`,
 	)
 
 	// RE_URL_HOST matches URLs with common schemes.
 	RE_URL_HOST = regexp.MustCompile(
 		`(?:https?|smb|ldaps?|ftp|rdp|vnc)://` +
 			`(?:[A-Za-z0-9._~:%-]+@)?` +
-			`([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))` +
+			`(` + hostOrIP + `)` +
 			`(?::(\d{1,5}))?`,
 	)
 
@@ -41,20 +46,19 @@ var (
 	// RE_SETVAR_HOST matches Metasploit set-variable patterns.
 	RE_SETVAR_HOST = regexp.MustCompile(
 		`(?i)(?:^|\s)(?:set\s+(?:RHOSTS?|LHOST|TARGET)|(?:RHOSTS?|LHOST|TARGET)=)\s*` +
-			`([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))` +
+			`(` + hostOrIP + `)` +
 			`(?::(\d{1,5}))?`,
 	)
 
-	// RE_FLAG_HOST is built from target flags, sorted longest-first.
-	RE_FLAG_HOST *regexp.Regexp
+	// RE_GLOBAL_FLAG_HOST is built from globalTargetFlags (long flags only).
+	RE_GLOBAL_FLAG_HOST *regexp.Regexp
 
 	// RE_IPV4_FULL is for fullmatch checking of IPv4 addresses.
 	RE_IPV4_FULL = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
 )
 
-// Target flags list - same as Python's _TARGET_FLAGS.
-var targetFlags = []string{
-	"-u", "-U", "-t", "-T", "-h", "-H", "-i", "-I",
+// globalTargetFlags are long flags that are unambiguous across all tools.
+var globalTargetFlags = []string{
 	"--url", "--host", "--target", "--target-ip",
 	"--dc-ip", "--dc-host", "--dc", "--kdcHost",
 	"-rhost", "--rhost", "--ip", "--server", "--remote-host",
@@ -70,12 +74,12 @@ var FILE_EXTENSIONS = map[string]struct{}{
 }
 
 func init() {
-	// Build RE_FLAG_HOST from targetFlags sorted longest-first.
-	escaped := sortAndEscapeFlags(targetFlags)
+	// Build RE_GLOBAL_FLAG_HOST from globalTargetFlags sorted longest-first.
+	escaped := sortAndEscapeFlags(globalTargetFlags)
 	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)` +
-		`(?:https?://)?([A-Za-z0-9._-]+(?:\.[A-Za-z]{2,}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b))` +
+		`(?:https?://)?(` + hostOrIP + `)` +
 		`(?::(\d{1,5}))?`
-	RE_FLAG_HOST = regexp.MustCompile(pattern)
+	RE_GLOBAL_FLAG_HOST = regexp.MustCompile(pattern)
 }
 
 // TargetResult holds the extracted targets from a command.
@@ -155,24 +159,25 @@ func isPathContext(cmd string, matchStart int) bool {
 func CredValueSpans(cmd, tool string) *PositionTracker {
 	pt := NewPositionTracker()
 
-	// Long credential flags (always active)
-	for _, rx := range []*regexp.Regexp{RE_LONG_USER, RE_LONG_PASS} {
-		for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
-			// Group 1 is the value captured by \S+
-			if m[2] >= 0 && m[3] >= 0 {
-				val := cmd[m[2]:m[3]]
-				val = StripQuotes(val)
-				_ = val
-				// Mark from start of capture group to end
-				pt.Mark(m[2], m[3])
+	config, toolKnown := GetToolConfig(tool)
+	hasCreds := config != nil && len(config.CredFlags) > 0
+	applyLongFlags := !toolKnown || hasCreds
+
+	// Long credential flags (only for unknown tools or tools with cred config)
+	if applyLongFlags {
+		for _, rx := range []*regexp.Regexp{RE_LONG_USER, RE_LONG_PASS} {
+			for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
+				if m[2] >= 0 && m[3] >= 0 {
+					pt.Mark(m[2], m[3])
+				}
 			}
 		}
-	}
 
-	// Long hash flags
-	for _, m := range RE_LONG_HASH.FindAllStringSubmatchIndex(cmd, -1) {
-		if m[2] >= 0 && m[3] >= 0 {
-			pt.Mark(m[2], m[3])
+		// Long hash flags
+		for _, m := range RE_LONG_HASH.FindAllStringSubmatchIndex(cmd, -1) {
+			if m[2] >= 0 && m[3] >= 0 {
+				pt.Mark(m[2], m[3])
+			}
 		}
 	}
 
@@ -190,8 +195,8 @@ func CredValueSpans(cmd, tool string) *PositionTracker {
 	return pt
 }
 
-// ExtractTargets runs all 7 regex passes over a command string.
-// Returns a TargetResult with IPs, CIDRs, hosts, and ports.
+// ExtractTargets runs target extraction passes over a command string.
+// Pass gating is tool-specific to avoid false positives.
 func ExtractTargets(cmd, tool string) *TargetResult {
 	result := &TargetResult{
 		IPs:   NewStringSet(),
@@ -199,6 +204,18 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		Hosts: NewStringSet(),
 		Ports: NewStringSet(),
 	}
+
+	config, toolKnown := GetToolConfig(tool)
+
+	// Tools with NoExtract skip all extraction.
+	if config != nil && config.NoExtract {
+		return result
+	}
+
+	// Positional extraction (bare IPs/FQDNs) is allowed for:
+	// - Unknown tools (backward compatible)
+	// - Known tools with PositionalArgs=true
+	allowPositional := !toolKnown || (config != nil && config.PositionalArgs)
 
 	// Pre-mark credential value positions so they aren't extracted as targets.
 	pos := CredValueSpans(cmd, tool)
@@ -257,20 +274,22 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		}
 	}
 
-	// Pass 1: IPv4 with optional CIDR and port
-	for _, m := range RE_IPV4_EXT.FindAllStringSubmatchIndex(cmd, -1) {
-		ipStr := cmd[m[2]:m[3]]
-		var cidrStr, portStr string
-		if m[4] >= 0 {
-			cidrStr = cmd[m[4]:m[5]]
+	// Pass 1: IPv4 with optional CIDR and port (only if positional allowed)
+	if allowPositional {
+		for _, m := range RE_IPV4_EXT.FindAllStringSubmatchIndex(cmd, -1) {
+			ipStr := cmd[m[2]:m[3]]
+			var cidrStr, portStr string
+			if m[4] >= 0 {
+				cidrStr = cmd[m[4]:m[5]]
+			}
+			if m[6] >= 0 {
+				portStr = cmd[m[6]:m[7]]
+			}
+			addIP(ipStr, portStr, cidrStr, m[0], m[1])
 		}
-		if m[6] >= 0 {
-			portStr = cmd[m[6]:m[7]]
-		}
-		addIP(ipStr, portStr, cidrStr, m[0], m[1])
 	}
 
-	// Pass 2: user@host / domain/user@host
+	// Pass 2: user@host / domain/user@host (always - structurally specific)
 	for _, m := range RE_USER_AT_HOST.FindAllStringSubmatchIndex(cmd, -1) {
 		host := cmd[m[2]:m[3]]
 		if isValidIPv4(host) {
@@ -280,7 +299,7 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		}
 	}
 
-	// Pass 3: UNC paths
+	// Pass 3: UNC paths (always - structurally specific)
 	for _, m := range RE_UNC_HOST.FindAllStringSubmatchIndex(cmd, -1) {
 		host := cmd[m[2]:m[3]]
 		if isValidIPv4(host) {
@@ -290,7 +309,7 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		}
 	}
 
-	// Pass 4: URL schemes
+	// Pass 4: URL schemes (always - structurally specific)
 	for _, m := range RE_URL_HOST.FindAllStringSubmatchIndex(cmd, -1) {
 		host := cmd[m[2]:m[3]]
 		var portStr string
@@ -304,8 +323,8 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		}
 	}
 
-	// Pass 5: Flag-based targets
-	for _, m := range RE_FLAG_HOST.FindAllStringSubmatchIndex(cmd, -1) {
+	// Pass 5a: Global long flags (always - unambiguous)
+	for _, m := range RE_GLOBAL_FLAG_HOST.FindAllStringSubmatchIndex(cmd, -1) {
 		host := cmd[m[2]:m[3]]
 		var portStr string
 		if m[4] >= 0 {
@@ -318,24 +337,44 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 		}
 	}
 
-	// Pass 6: Metasploit set-variable patterns
-	for _, m := range RE_SETVAR_HOST.FindAllStringSubmatchIndex(cmd, -1) {
-		host := cmd[m[2]:m[3]]
-		var portStr string
-		if m[4] >= 0 {
-			portStr = cmd[m[4]:m[5]]
-		}
-		if isValidIPv4(host) {
-			addIP(host, portStr, "", m[2], m[1])
-		} else {
-			addHost(host, portStr, m[2], m[1])
+	// Pass 5b: Per-tool short target flags (only for tools with target flag config)
+	if rx, ok := toolTargetRegexes[tool]; ok {
+		for _, m := range rx.FindAllStringSubmatchIndex(cmd, -1) {
+			host := cmd[m[2]:m[3]]
+			var portStr string
+			if m[4] >= 0 {
+				portStr = cmd[m[4]:m[5]]
+			}
+			if isValidIPv4(host) {
+				addIP(host, portStr, "", m[2], m[1])
+			} else {
+				addHost(host, portStr, m[2], m[1])
+			}
 		}
 	}
 
-	// Pass 7: Bare FQDN hostnames
-	for _, m := range RE_BARE_HOSTNAME.FindAllStringSubmatchIndex(cmd, -1) {
-		host := cmd[m[2]:m[3]]
-		addHost(host, "", m[2], m[3])
+	// Pass 6: Metasploit set-variable patterns (msfconsole or unknown tool)
+	if tool == "" || tool == "msfconsole" {
+		for _, m := range RE_SETVAR_HOST.FindAllStringSubmatchIndex(cmd, -1) {
+			host := cmd[m[2]:m[3]]
+			var portStr string
+			if m[4] >= 0 {
+				portStr = cmd[m[4]:m[5]]
+			}
+			if isValidIPv4(host) {
+				addIP(host, portStr, "", m[2], m[1])
+			} else {
+				addHost(host, portStr, m[2], m[1])
+			}
+		}
+	}
+
+	// Pass 7: Bare FQDN hostnames (only if positional allowed)
+	if allowPositional {
+		for _, m := range RE_BARE_HOSTNAME.FindAllStringSubmatchIndex(cmd, -1) {
+			host := cmd[m[2]:m[3]]
+			addHost(host, "", m[2], m[3])
+		}
 	}
 
 	return result

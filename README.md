@@ -8,7 +8,7 @@ A CLI tool that automatically captures and logs shell commands during penetratio
 - **Engagement management** — organize logs by project/target
 - **Phase tagging** — annotate commands with operational phases (`recon`, `exploitation`, `privesc`, etc.)
 - **Output capture** — optionally capture full stdout/stderr for each command
-- **Target extraction** — automatically extract IPs, CIDRs, hostnames, ports, and credentials from logged commands
+- **Target extraction** — automatically extract IPs, CIDRs, hostnames, ports, and credentials from logged commands with tool-aware parsing to avoid false positives
 - **Search & analysis** — search logs, view timelines, get tool usage stats
 - **Export** — generate Markdown or CSV reports
 
@@ -135,6 +135,29 @@ RTLog watches for 25+ common red team tools out of the box, configured in `~/.rt
 `nmap` `gobuster` `ffuf` `nikto` `feroxbuster` `wfuzz` `sqlmap` `curl` `wget` `hydra` `hashcat` `john` `nxc` `crackmapexec` `bloodhound` `kerbrute` `impacket-*` `certipy` `bloodyAD` `rusthound` `responder` `evil-winrm` `chisel` `sshuttle` `searchsploit` `msfconsole` `msfvenom` `enum4linux`
 
 Edit `~/.rt/tools.conf` to add or remove tools. Glob patterns are supported.
+
+## Extraction Config
+
+RTLog uses tool-specific rules when extracting targets and credentials from commands. For example, `-i` means an IP for `evil-winrm` but an interface for `responder`, and `hashcat --user` is a boolean flag, not a username. Built-in rules cover all tracked tools.
+
+To add or override extraction rules for custom tools, create `~/.rt/extract.conf`:
+
+```conf
+# One tool per line. Format:
+#   tool [positional] [target:flag1,flag2] [cred:flag=role,...] [noextract]
+#
+# positional   - bare IPs/hostnames are extracted as targets
+# target:      - comma-separated short flags for target extraction
+# cred:        - comma-separated flag=role pairs (roles: user, pass, hash)
+# noextract    - skip all extraction for this tool
+
+# Examples:
+mytool positional target:-t cred:-u=user,-p=pass
+webtool target:-u
+ignoretool noextract
+```
+
+A user-defined entry completely overrides the built-in config for that tool. Tools not listed use built-in defaults. Unknown tools (not in built-in config or `extract.conf`) fall back to permissive extraction: bare IPs/hostnames, global long flags (`--target`, `--dc-ip`, etc.), inline patterns, and URL schemes.
 
 ## Log Format
 
