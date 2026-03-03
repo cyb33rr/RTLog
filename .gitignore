@@ -1,0 +1,23 @@
+# Build artifacts
+rtlog
+rtlog-*
+*.exe
+
+# Go
+vendor/
+
+# Project files (local only)
+PLAN.md
+PROMPT.md
+.done
+.claude/
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
