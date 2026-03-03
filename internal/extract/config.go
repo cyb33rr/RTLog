@@ -2,6 +2,7 @@ package extract
 
 import (
 	"bufio"
+	"bytes"
 	"os"
 	"regexp"
 	"strings"
@@ -22,59 +23,9 @@ var toolConfigs map[string]*ToolExtractConfig
 var toolTargetRegexes map[string]*regexp.Regexp
 
 func init() {
-	toolConfigs = map[string]*ToolExtractConfig{
-		// Positional target tools
-		"nmap":          {PositionalArgs: true},
-		"nxc":           {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass", "-H": "hash"}},
-		"crackmapexec":  {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass", "-H": "hash"}},
-		"enum4linux":    {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"enum4linux-ng": {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass", "-H": "hash"}},
-		"ssh":           {PositionalArgs: true, CredFlags: map[string]string{"-l": "user"}},
-		"smbmap":        {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"rdesktop":      {PositionalArgs: true, CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"plink":         {PositionalArgs: true, CredFlags: map[string]string{"-l": "user", "-pw": "pass"}},
-
-		// Flag-based target tools
-		"gobuster":    {TargetFlags: []string{"-u"}, CredFlags: map[string]string{"-U": "user", "-P": "pass"}},
-		"ffuf":        {TargetFlags: []string{"-u"}},
-		"feroxbuster": {TargetFlags: []string{"-u"}},
-		"wfuzz":       {TargetFlags: []string{"-u"}},
-		"sqlmap":      {TargetFlags: []string{"-u"}},
-		"nikto":       {TargetFlags: []string{"-h"}},
-		"evil-winrm":  {TargetFlags: []string{"-i"}, CredFlags: map[string]string{"-u": "user", "-p": "pass", "-H": "hash"}},
-
-		// URL-scheme-only target tools (no short target flags)
-		"curl": {},
-		"wget": {},
-
-		// Metasploit tools (set-variable pass handles targets/creds)
-		"msfconsole": {},
-		"msfvenom":   {},
-
-		// No extraction tools
-		"hashcat":      {},
-		"john":         {},
-		"searchsploit": {},
-		"responder":    {},
-		"chisel":       {},
-		"sshuttle":     {},
-
-		// Hydra uses URL-scheme pass
-		"hydra": {},
-
-		// AD tools with cred flags (targets via global long flags like --dc)
-		"bloodhound":     {CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"kerbrute":       {},
-		"certipy":        {},
-		"bloodyAD":       {CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"rusthound":      {CredFlags: map[string]string{"-u": "user", "-p": "pass", "--ldapusername": "user", "--ldappassword": "pass"}},
-		"ldapdomaindump": {CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"ldeep":          {CredFlags: map[string]string{"-u": "user", "-p": "pass", "-H": "hash"}},
-		"windapsearch":   {CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-		"adidnsdump":     {CredFlags: map[string]string{"-u": "user", "-p": "pass"}},
-	}
-
-	compileToolRegexes()
+	toolConfigs = make(map[string]*ToolExtractConfig)
+	toolTargetRegexes = make(map[string]*regexp.Regexp)
+	toolCredRegexes = make(map[string]map[string]*regexp.Regexp)
 }
 
 // compileToolRegexes builds per-tool target and credential regexes from toolConfigs.
@@ -138,19 +89,10 @@ func IsKnownTool(tool string) bool {
 	return known
 }
 
-// LoadUserConfig reads a user config file and merges entries into toolConfigs.
-// Missing file is not an error. User entries override built-in config entirely.
-func LoadUserConfig(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
+// LoadConfigBytes parses extraction config from raw bytes and populates toolConfigs.
+// This is used for both the embedded default config and user overrides.
+func LoadConfigBytes(data []byte) error {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -158,10 +100,6 @@ func LoadUserConfig(path string) error {
 		}
 
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-
 		toolName := fields[0]
 		cfg := &ToolExtractConfig{}
 
@@ -195,10 +133,8 @@ func LoadUserConfig(path string) error {
 					}
 				}
 			}
-			// Unknown options silently ignored (forward compatible)
 		}
 
-		// User entry completely overrides built-in config
 		toolConfigs[toolName] = cfg
 	}
 
@@ -206,7 +142,20 @@ func LoadUserConfig(path string) error {
 		return err
 	}
 
-	// Recompile all regexes after config changes
 	compileToolRegexes()
 	return nil
+}
+
+// LoadUserConfig reads a user config file and merges entries into toolConfigs.
+// Missing file is not an error. User entries override built-in config entirely.
+func LoadUserConfig(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	return LoadConfigBytes(data)
 }

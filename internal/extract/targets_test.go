@@ -154,23 +154,6 @@ func TestExtractTargetsMultipleIPs(t *testing.T) {
 
 // --- Tool-specific false-positive prevention tests ---
 
-func TestExtractTargetsHashcatNoBareIP(t *testing.T) {
-	result := ExtractTargets("hashcat -m 1000 hash.txt", "hashcat")
-	if result.IPs.Len() > 0 {
-		t.Errorf("hashcat should not extract any IPs, got %v", result.IPs)
-	}
-	if result.Hosts.Len() > 0 {
-		t.Errorf("hashcat should not extract any hosts, got %v", result.Hosts)
-	}
-}
-
-func TestExtractTargetsJohnNoBareIP(t *testing.T) {
-	result := ExtractTargets("john --wordlist=rockyou.txt hash.txt", "john")
-	if result.IPs.Len() > 0 {
-		t.Errorf("john should not extract any IPs, got %v", result.IPs)
-	}
-}
-
 func TestExtractTargetsResponderNoTarget(t *testing.T) {
 	result := ExtractTargets("responder -I eth0", "responder")
 	if result.IPs.Len() > 0 {

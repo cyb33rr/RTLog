@@ -34,6 +34,17 @@ func init() {
 			return nil // non-fatal
 		}
 		configPath := filepath.Join(home, ".rt", "extract.conf")
+
+		// Auto-create from embedded default if missing
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			if data, e := embeddedFS.ReadFile("extract.conf"); e == nil {
+				rtDir := filepath.Join(home, ".rt")
+				_ = os.MkdirAll(rtDir, 0755)
+				_ = os.WriteFile(configPath, data, 0644)
+			}
+		}
+
+		// Load extraction config (primary source)
 		_ = extract.LoadUserConfig(configPath)
 		return nil
 	}

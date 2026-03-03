@@ -70,6 +70,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 	// 2. Write embedded files
 	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"))
 	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"))
+	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"))
 
 	// 3-4. Copy binary + symlink (skip if already on PATH, e.g. go install)
 	onPath := isOnPath()
