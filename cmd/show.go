@@ -54,15 +54,33 @@ var showCmd = &cobra.Command{
 		if dateFilter != nil {
 			header += fmt.Sprintf("  [%s]", dateFilter.Format("2006-01-02"))
 		}
-		fmt.Println(display.Colorize(header, display.Bold))
-		fmt.Println()
 
 		idxWidth := len(fmt.Sprintf("%d", len(entries)))
-		for i, entry := range entries {
-			m := logfile.ToMap(entry)
-			fmt.Println(display.FmtEntry(m, i+1, idxWidth, !showOutput))
-			if showOutput {
+
+		// Convert to display.Entry maps
+		entryMaps := make([]display.Entry, len(entries))
+		for i, e := range entries {
+			entryMaps[i] = logfile.ToMap(e)
+		}
+
+		if showOutput {
+			fmt.Println(display.Colorize(header, display.Bold))
+			fmt.Println()
+			for i, m := range entryMaps {
+				fmt.Println(display.FmtEntry(m, i+1, idxWidth, false))
 				display.PrintOutputBlock(m, true)
+			}
+		} else if display.IsTTY {
+			sel := display.NewSelector(entryMaps, header, idxWidth)
+			if err := sel.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Println(display.Colorize(header, display.Bold))
+			fmt.Println()
+			for i, m := range entryMaps {
+				fmt.Println(display.FmtEntry(m, i+1, idxWidth))
 			}
 		}
 	},
@@ -71,7 +89,7 @@ var showCmd = &cobra.Command{
 func init() {
 	showCmd.Flags().BoolVar(&showToday, "today", false, "show only today's entries")
 	showCmd.Flags().StringVar(&showDate, "date", "", "show entries for a specific date (YYYY-MM-DD)")
-	showCmd.Flags().BoolVarP(&showOutput, "output", "o", false, "include captured command output inline")
+	showCmd.Flags().BoolVarP(&showOutput, "all", "a", false, "print all entries with their output (non-interactive)")
 	showCmd.MarkFlagsMutuallyExclusive("today", "date")
 	rootCmd.AddCommand(showCmd)
 }
