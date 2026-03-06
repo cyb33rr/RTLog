@@ -7,25 +7,24 @@ import (
 	"testing"
 )
 
-func TestIsZshShell(t *testing.T) {
-	tests := []struct {
-		shell string
-		want  bool
-	}{
-		{"/usr/bin/zsh", true},
-		{"/bin/zsh", true},
-		{"/bin/bash", false},
-		{"/usr/bin/fish", false},
-		{"", false},
+func TestFileExists(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Existing file
+	f := filepath.Join(tmp, "exists")
+	os.WriteFile(f, []byte("x"), 0644)
+	if !fileExists(f) {
+		t.Error("fileExists returned false for existing file")
 	}
-	for _, tt := range tests {
-		t.Run(tt.shell, func(t *testing.T) {
-			os.Setenv("SHELL", tt.shell)
-			defer os.Unsetenv("SHELL")
-			if got := isZshShell(); got != tt.want {
-				t.Errorf("isZshShell() with SHELL=%q = %v, want %v", tt.shell, got, tt.want)
-			}
-		})
+
+	// Non-existent file
+	if fileExists(filepath.Join(tmp, "nope")) {
+		t.Error("fileExists returned true for missing file")
+	}
+
+	// Directory should return false
+	if fileExists(tmp) {
+		t.Error("fileExists returned true for directory")
 	}
 }
 
@@ -111,7 +110,7 @@ func TestUninstallNarrowHookMatching(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanZshrc(zshrc)
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -152,11 +151,108 @@ func TestUninstallBlankLineCollapsing(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanZshrc(zshrc)
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
 
 	result, _ := os.ReadFile(zshrc)
 	// Should not have 3+ consecutive newlines (i.e. 2+ blank lines)
 	if strings.Contains(string(result), "\n\n\n") {
 		t.Errorf("consecutive blank lines remain:\n%s", result)
+	}
+}
+
+func TestUninstallCleanBashrc(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	content := strings.Join([]string{
+		"# existing bash config",
+		"alias ls='ls --color=auto'",
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+		`export PATH="$HOME/.local/bin:$PATH"`,
+		"export EDITOR=vim",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if strings.Contains(lines, ".rt/hook.bash") {
+		t.Error(".rt/hook.bash line was not removed")
+	}
+	if strings.Contains(lines, `export PATH="$HOME/.local/bin:$PATH"`) {
+		t.Error("PATH export was not removed from .bashrc")
+	}
+	if !strings.Contains(lines, "alias ls='ls --color=auto'") {
+		t.Error("existing bash config was incorrectly removed")
+	}
+	if !strings.Contains(lines, "export EDITOR=vim") {
+		t.Error("other export was incorrectly removed")
+	}
+}
+
+func TestUninstallBashrcDoesNotRemoveZshHook(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	// .bashrc that somehow has a zsh hook line — should NOT be removed by bash pattern
+	content := strings.Join([]string{
+		"source $HOME/.rt/hook.zsh",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if !strings.Contains(lines, ".rt/hook.zsh") {
+		t.Error("zsh hook line was incorrectly removed by bash uninstall")
+	}
+	if strings.Contains(lines, ".rt/hook.bash") {
+		t.Error(".rt/hook.bash line was not removed")
+	}
+}
+
+func TestSetupShellRcBash(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	// Create an existing .bashrc
+	os.WriteFile(bashrc, []byte("# my bash config\n"), 0644)
+
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
+		t.Error("hook.bash source line not added to .bashrc")
+	}
+	if !strings.Contains(lines, "# Red Team Operation Logger") {
+		t.Error("comment not added to .bashrc")
+	}
+}
+
+func TestSetupShellRcIdempotent(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	initial := strings.Join([]string{
+		"# my bash config",
+		"",
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(initial), 0644)
+
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	if string(result) != initial {
+		t.Errorf("setupShellRc modified already-configured file:\n%s", result)
 	}
 }

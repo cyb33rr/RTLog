@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// embeddedFS holds the embedded hook.zsh and tools.conf files.
+// embeddedFS holds the embedded hook files, tools.conf, and extract.conf.
 var embeddedFS embed.FS
 
 // SetEmbeddedFiles injects the embedded filesystem from main.
@@ -23,14 +23,14 @@ func SetEmbeddedFiles(fs embed.FS) {
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Install rtlog into ~/.rt/ and configure the shell",
-	Long: `Idempotent setup that installs rtlog to ~/.rt/ and configures zsh.
+	Long: `Idempotent setup that installs rtlog to ~/.rt/ and configures zsh and/or bash.
 
 Steps performed:
   1. Create ~/.rt/logs/ and ~/.local/bin/
-  2. Write embedded hook.zsh and tools.conf to ~/.rt/
+  2. Write embedded hook files (hook.zsh, hook.bash, bash-preexec.sh) and tools.conf to ~/.rt/
   3. Copy this binary to ~/.rt/rtlog  (skipped if already on PATH, e.g. go install)
   4. Create symlink ~/.local/bin/rtlog  (skipped if already on PATH)
-  5. Configure ~/.zshrc (hook source line; PATH export only if symlink was created)`,
+  5. Configure ~/.zshrc and/or ~/.bashrc (hook source line; PATH export only if symlink was created)`,
 	Args: cobra.NoArgs,
 	Run:  runSetup,
 }
@@ -50,25 +50,19 @@ func runSetup(cmd *cobra.Command, args []string) {
 	logDir := filepath.Join(rtDir, "logs")
 	localBin := filepath.Join(home, ".local", "bin")
 	zshrc := filepath.Join(home, ".zshrc")
+	bashrc := filepath.Join(home, ".bashrc")
 
 	fmt.Println("=== Red Team Operation Logger - Setup ===")
 	fmt.Println()
-
-	if !isZshShell() {
-		shell := os.Getenv("SHELL")
-		if shell == "" {
-			shell = "unknown"
-		}
-		fmt.Printf("[!]  Current shell is %s — setup configures ~/.zshrc which may not be loaded\n", shell)
-		fmt.Println()
-	}
 
 	// 1. Create directories
 	setupCreateDir(logDir)
 	setupCreateDir(localBin)
 
-	// 2. Write embedded files
+	// 2. Write embedded files (both shells, always)
 	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"))
+	setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"))
+	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"))
 	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"))
 	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"))
 
@@ -82,14 +76,30 @@ func runSetup(cmd *cobra.Command, args []string) {
 		fmt.Println("[ok] Binary already on PATH, skipping copy and symlink")
 	}
 
-	// 5. Configure ~/.zshrc
-	setupZshrc(zshrc, localBin, rtDir, addPathExport)
+	// 5. Configure shell rc files based on existence
+	zshrcExists := fileExists(zshrc)
+	bashrcExists := fileExists(bashrc)
+
+	if zshrcExists {
+		setupShellRc(zshrc, localBin, rtDir, addPathExport, "hook.zsh", ".zshrc")
+	}
+	if bashrcExists {
+		setupShellRc(bashrc, localBin, rtDir, addPathExport, "hook.bash", ".bashrc")
+	}
+	if !zshrcExists && !bashrcExists {
+		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
+		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
+	}
 
 	fmt.Println()
 	fmt.Println("=== Setup complete ===")
 	fmt.Println()
 	fmt.Println("Quick-start:")
-	fmt.Println("  1. Reload shell:     source ~/.zshrc")
+	if zshrcExists {
+		fmt.Println("  1. Reload shell:     source ~/.zshrc")
+	} else if bashrcExists {
+		fmt.Println("  1. Reload shell:     source ~/.bashrc")
+	}
 	fmt.Println("  2. Start engagement: rtlog new <name>")
 	fmt.Println("  3. Set phase tag:    rtlog tag recon")
 	fmt.Println("  4. Run tools normally - logging is automatic")
@@ -269,9 +279,10 @@ func collapseBlankLines(lines []string) []string {
 	return out
 }
 
-// isZshShell checks if the user's login shell is zsh.
-func isZshShell() bool {
-	return filepath.Base(os.Getenv("SHELL")) == "zsh"
+// fileExists checks if a file exists (not a directory).
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // isOnPath checks if the running binary's directory is already in $PATH.
@@ -291,15 +302,15 @@ func isOnPath() bool {
 	return false
 }
 
-// setupZshrc ensures PATH and hook source lines are in .zshrc.
-// addPathExport controls whether the ~/.local/bin PATH export is added.
-func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
-	sourceLine := fmt.Sprintf("source %s/.rt/hook.zsh", "$HOME")
+// setupShellRc ensures PATH and hook source lines are in the given rc file.
+// hookFile is "hook.zsh" or "hook.bash". rcName is ".zshrc" or ".bashrc" (for messages).
+func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, rcName string) {
+	sourceLine := fmt.Sprintf("source %s/.rt/%s", "$HOME", hookFile)
 
 	// Read existing content
-	content, err := os.ReadFile(zshrc)
+	content, err := os.ReadFile(rcFile)
 	if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "[!]  Cannot read %s: %v\n", zshrc, err)
+		fmt.Fprintf(os.Stderr, "[!]  Cannot read %s: %v\n", rcFile, err)
 		os.Exit(1)
 	}
 
@@ -328,20 +339,20 @@ func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
 	if addPathExport {
 		if !hasPathExport {
 			newLines = append(newLines, "", `export PATH="$HOME/.local/bin:$PATH"`)
-			fmt.Printf("[+]  Added %s to PATH in .zshrc\n", localBin)
+			fmt.Printf("[+]  Added %s to PATH in %s\n", localBin, rcName)
 		} else {
 			fmt.Printf("[ok] %s already in PATH\n", localBin)
 		}
 	} else {
-		fmt.Println("[ok] Binary on PATH, skipping PATH export")
+		fmt.Printf("[ok] Binary on PATH, skipping PATH export in %s\n", rcName)
 	}
 
 	// Append source line if missing
 	if !hasSourceLine {
 		newLines = append(newLines, "", "# Red Team Operation Logger", sourceLine)
-		fmt.Println("[+]  Added source line to .zshrc")
+		fmt.Printf("[+]  Added source line to %s\n", rcName)
 	} else {
-		fmt.Println("[ok] hook.zsh already sourced in .zshrc")
+		fmt.Printf("[ok] %s already sourced in %s\n", hookFile, rcName)
 	}
 
 	// Atomic write
@@ -350,8 +361,8 @@ func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
 		return
 	}
 
-	dir := filepath.Dir(zshrc)
-	tmp, err := os.CreateTemp(dir, ".zshrc.")
+	dir := filepath.Dir(rcFile)
+	tmp, err := os.CreateTemp(dir, "."+rcName+".")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
 		os.Exit(1)
@@ -361,11 +372,11 @@ func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
 
 	if _, err := tmp.WriteString(newContent); err != nil {
 		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to write .zshrc: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[!]  Failed to write %s: %v\n", rcName, err)
 		os.Exit(1)
 	}
 	// Preserve original permissions
-	if info, err := os.Stat(zshrc); err == nil {
+	if info, err := os.Stat(rcFile); err == nil {
 		tmp.Chmod(info.Mode())
 	} else {
 		tmp.Chmod(0644)
@@ -374,8 +385,8 @@ func setupZshrc(zshrc, localBin, rtDir string, addPathExport bool) {
 		fmt.Fprintf(os.Stderr, "[!]  Failed to close temp file: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.Rename(tmpName, zshrc); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to update .zshrc: %v\n", err)
+	if err := os.Rename(tmpName, rcFile); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to update %s: %v\n", rcName, err)
 		os.Exit(1)
 	}
 }

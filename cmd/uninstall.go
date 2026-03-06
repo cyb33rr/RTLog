@@ -20,7 +20,7 @@ var uninstallCmd = &cobra.Command{
 	Long: `Remove rtlog installation artifacts:
 
   1. Remove symlink ~/.local/bin/rtlog (if present)
-  2. Remove hook and PATH export lines from ~/.zshrc
+  2. Remove hook and PATH export lines from ~/.zshrc and ~/.bashrc
   3. Optionally delete ~/.rt/ (prompts unless -y)
   4. If installed via go install, advises how to remove the binary`,
 	Args: cobra.NoArgs,
@@ -42,6 +42,7 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	rtDir := filepath.Join(home, ".rt")
 	localBin := filepath.Join(home, ".local", "bin")
 	zshrc := filepath.Join(home, ".zshrc")
+	bashrc := filepath.Join(home, ".bashrc")
 	symlinkPath := filepath.Join(localBin, "rtlog")
 	binaryPath := filepath.Join(rtDir, "rtlog")
 
@@ -51,8 +52,9 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	// 1. Remove symlink
 	uninstallRemoveSymlink(symlinkPath, binaryPath)
 
-	// 2. Remove hook lines from .zshrc
-	uninstallCleanZshrc(zshrc)
+	// 2. Remove hook lines from shell rc files
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
 
 	// 3. Remove ~/.rt/ (prompt first)
 	uninstallRemoveDir(rtDir)
@@ -63,7 +65,7 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	fmt.Println()
 	fmt.Println("=== Uninstall complete ===")
 	fmt.Println()
-	fmt.Println("Run 'source ~/.zshrc' or open a new shell to apply changes.")
+	fmt.Println("Open a new shell to apply changes.")
 }
 
 // uninstallRemoveSymlink removes the rtlog symlink if it points to our binary.
@@ -91,15 +93,17 @@ func uninstallRemoveSymlink(link, expectedTarget string) {
 	fmt.Printf("[-]  Removed symlink: %s\n", link)
 }
 
-// uninstallCleanZshrc removes hook-related lines from .zshrc.
-func uninstallCleanZshrc(zshrc string) {
-	content, err := os.ReadFile(zshrc)
+// uninstallCleanShellRc removes hook-related lines from a shell rc file.
+// hookPattern is the hook path to match (e.g. ".rt/hook.zsh" or ".rt/hook.bash").
+// rcName is a display name (e.g. ".zshrc" or ".bashrc").
+func uninstallCleanShellRc(rcFile, hookPattern, rcName string) {
+	content, err := os.ReadFile(rcFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("[ok] No %s found\n", zshrc)
+			fmt.Printf("[ok] No %s found\n", rcName)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "[!]  Cannot read %s: %v\n", zshrc, err)
+		fmt.Fprintf(os.Stderr, "[!]  Cannot read %s: %v\n", rcFile, err)
 		return
 	}
 
@@ -116,8 +120,8 @@ func uninstallCleanZshrc(zshrc string) {
 			continue
 		}
 
-		// Remove our hook.zsh source line (only .rt/hook.zsh)
-		if strings.Contains(trimmed, "source") && strings.Contains(trimmed, ".rt/hook.zsh") {
+		// Remove our hook source line (match the specific hook pattern)
+		if strings.Contains(trimmed, "source") && strings.Contains(trimmed, hookPattern) {
 			removed = true
 			continue
 		}
@@ -132,7 +136,7 @@ func uninstallCleanZshrc(zshrc string) {
 	}
 
 	if !removed {
-		fmt.Println("[ok] No hook lines in .zshrc")
+		fmt.Printf("[ok] No hook lines in %s\n", rcName)
 		return
 	}
 
@@ -141,8 +145,8 @@ func uninstallCleanZshrc(zshrc string) {
 
 	// Atomic write
 	newContent := strings.Join(newLines, "\n")
-	dir := filepath.Dir(zshrc)
-	tmp, err := os.CreateTemp(dir, ".zshrc.")
+	dir := filepath.Dir(rcFile)
+	tmp, err := os.CreateTemp(dir, "."+rcName+".")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
 		return
@@ -152,10 +156,10 @@ func uninstallCleanZshrc(zshrc string) {
 
 	if _, err := tmp.WriteString(newContent); err != nil {
 		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to write .zshrc: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[!]  Failed to write %s: %v\n", rcName, err)
 		return
 	}
-	if info, err := os.Stat(zshrc); err == nil {
+	if info, err := os.Stat(rcFile); err == nil {
 		tmp.Chmod(info.Mode())
 	} else {
 		tmp.Chmod(0644)
@@ -164,11 +168,11 @@ func uninstallCleanZshrc(zshrc string) {
 		fmt.Fprintf(os.Stderr, "[!]  Failed to close temp file: %v\n", err)
 		return
 	}
-	if err := os.Rename(tmpName, zshrc); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to update .zshrc: %v\n", err)
+	if err := os.Rename(tmpName, rcFile); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to update %s: %v\n", rcName, err)
 		return
 	}
-	fmt.Println("[-]  Removed hook lines from .zshrc")
+	fmt.Printf("[-]  Removed hook lines from %s\n", rcName)
 }
 
 // uninstallRemoveDir removes ~/.rt/ after confirmation.
