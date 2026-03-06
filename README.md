@@ -110,14 +110,13 @@ rtlog capture off        # Disable capture (metadata only)
 ### Viewing Logs
 
 ```bash
-rtlog show               # Pretty-print all entries
+rtlog show               # Interactive selector (navigate with ↑/↓, Enter to view output)
 rtlog show --today       # Today's entries only
 rtlog show --date 2025-01-15
-rtlog show -o            # Include captured output inline
+rtlog show -a            # Print all entries with output (non-interactive)
 rtlog show -e <name>     # Show a different engagement
 rtlog tail               # Last 20 entries, then follow live
 rtlog tail -n 50         # Customize tail count
-rtlog output <index>     # Show captured output for entry N
 rtlog search <keyword>   # Case-insensitive search with highlighting
 ```
 
