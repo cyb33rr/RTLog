@@ -14,7 +14,7 @@ type Entry = map[string]interface{}
 
 // FmtEntry formats a single log entry for display.
 // Format: idx  HH:MM:SS  tool  cmd  exit:N  Ns  [tag]  # note  [+out]
-func FmtEntry(entry Entry, index, idxWidth int) string {
+func FmtEntry(entry Entry, index, idxWidth int, showOutIndicator ...bool) string {
 	// Timestamp
 	tsRaw, _ := entry["ts"].(string)
 	tsStr := formatTimestamp(tsRaw)
@@ -56,8 +56,11 @@ func FmtEntry(entry Entry, index, idxWidth int) string {
 
 	// Output indicator
 	outIndicator := ""
-	if out, _ := entry["out"].(string); out != "" {
-		outIndicator = Colorize(" [+out]", Dim)
+	hideOut := len(showOutIndicator) > 0 && !showOutIndicator[0]
+	if !hideOut {
+		if out, _ := entry["out"].(string); out != "" {
+			outIndicator = Colorize(" [+out]", Dim)
+		}
 	}
 
 	// Index
@@ -80,7 +83,7 @@ func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int)
 	return line
 }
 
-// PrintOutputBlock prints captured output with separators.
+// PrintOutputBlock prints captured output indented under the entry.
 func PrintOutputBlock(entry Entry, stripAnsi bool) {
 	text, _ := entry["out"].(string)
 	if text == "" || strings.TrimSpace(text) == "" {
@@ -89,13 +92,12 @@ func PrintOutputBlock(entry Entry, stripAnsi bool) {
 	if stripAnsi {
 		text = RE_ANSI.ReplaceAllString(text, "")
 	}
-	bar := Colorize("    --- output ---", Dim)
-	end := Colorize("    --- end ---", Dim)
-	fmt.Println(bar)
+	text = strings.TrimRight(text, "\n")
+	fmt.Println()
 	for _, line := range strings.Split(text, "\n") {
 		fmt.Printf("    %s\n", line)
 	}
-	fmt.Println(end)
+	fmt.Println()
 }
 
 // formatTimestamp extracts HH:MM:SS from an ISO timestamp.

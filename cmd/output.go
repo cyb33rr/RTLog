@@ -44,7 +44,7 @@ var outputCmd = &cobra.Command{
 		entry := entries[idx-1]
 		m := logfile.ToMap(entry)
 		idxWidth := len(fmt.Sprintf("%d", len(entries)))
-		fmt.Println(display.FmtEntry(m, idx, idxWidth))
+		fmt.Println(display.FmtEntry(m, idx, idxWidth, false))
 
 		text := entry.Out
 		if strings.TrimSpace(text) == "" {
@@ -56,11 +56,12 @@ var outputCmd = &cobra.Command{
 			text = display.RE_ANSI.ReplaceAllString(text, "")
 		}
 
+		text = strings.TrimRight(text, "\n")
 		fmt.Println()
-		fmt.Print(text)
-		if len(text) > 0 && text[len(text)-1] != '\n' {
-			fmt.Println()
+		for _, line := range strings.Split(text, "\n") {
+			fmt.Printf("    %s\n", line)
 		}
+		fmt.Println()
 	},
 }
 

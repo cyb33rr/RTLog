@@ -60,7 +60,7 @@ var showCmd = &cobra.Command{
 		idxWidth := len(fmt.Sprintf("%d", len(entries)))
 		for i, entry := range entries {
 			m := logfile.ToMap(entry)
-			fmt.Println(display.FmtEntry(m, i+1, idxWidth))
+			fmt.Println(display.FmtEntry(m, i+1, idxWidth, !showOutput))
 			if showOutput {
 				display.PrintOutputBlock(m, true)
 			}
