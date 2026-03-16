@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/cyb33rr/rtlog/internal/logfile"
+	"github.com/cyb33rr/rtlog/internal/db"
 )
 
 func resetLogFlags() {
@@ -18,6 +17,8 @@ func resetLogFlags() {
 	logCmdCwd = ""
 	logCmdTag = ""
 	logCmdNote = ""
+	logCmdOutFile = ""
+	logCmdTTY = ""
 }
 
 func TestLogWritesEntry(t *testing.T) {
@@ -38,17 +39,21 @@ func TestLogWritesEntry(t *testing.T) {
 	rootCmd.SetArgs([]string{"log", "--cmd", "nmap -sV 10.10.10.5", "--exit", "0", "--dur", "5.2"})
 	rootCmd.Execute()
 
-	logPath := filepath.Join(logDir, "test-eng.jsonl")
-	data, err := os.ReadFile(logPath)
+	d, err := db.Open(logDir, "test-eng")
 	if err != nil {
-		t.Fatalf("log file not created: %v", err)
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer d.Close()
+
+	entries, err := d.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll failed: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no entries in database")
 	}
 
-	var entry logfile.LogEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		t.Fatalf("invalid JSONL: %v", err)
-	}
-
+	entry := entries[0]
 	if entry.Tool != "nmap" {
 		t.Errorf("tool = %q, want %q", entry.Tool, "nmap")
 	}
@@ -81,8 +86,22 @@ func TestLogSkipsUnmatchedTool(t *testing.T) {
 	rootCmd.SetArgs([]string{"log", "--cmd", "vim foo.txt"})
 	rootCmd.Execute()
 
-	logPath := filepath.Join(logDir, "test-eng.jsonl")
-	if _, err := os.Stat(logPath); err == nil {
-		t.Error("log file should not exist for unmatched tool")
+	dbPath := filepath.Join(logDir, "test-eng.db")
+	if _, err := os.Stat(dbPath); err == nil {
+		// DB was created, check it has zero entries
+		d, err := db.Open(logDir, "test-eng")
+		if err != nil {
+			t.Fatalf("failed to open db: %v", err)
+		}
+		defer d.Close()
+
+		count, err := d.Count()
+		if err != nil {
+			t.Fatalf("Count failed: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("expected 0 entries for unmatched tool, got %d", count)
+		}
 	}
+	// If .db doesn't exist at all, that's also correct — unmatched tool shouldn't create it
 }

@@ -1,35 +1,36 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/cyb33rr/rtlog/internal/db"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/cyb33rr/rtlog/internal/match"
 	"github.com/cyb33rr/rtlog/internal/state"
 )
 
 var (
-	logCmdCmd  string
-	logCmdExit int
-	logCmdDur  float64
-	logCmdOut  string
-	logCmdTool string
-	logCmdCwd  string
-	logCmdTag  string
-	logCmdNote string
+	logCmdCmd     string
+	logCmdExit    int
+	logCmdDur     float64
+	logCmdOut     string
+	logCmdTool    string
+	logCmdCwd     string
+	logCmdTag     string
+	logCmdNote    string
+	logCmdOutFile string
+	logCmdTTY     string
 )
 
 var logCmd = &cobra.Command{
 	Use:   "log",
 	Short: "Programmatically log a command entry",
-	Long: `Log a command entry directly to the active engagement's JSONL file.
+	Long: `Log a command entry directly to the active engagement's SQLite database.
 
 Intended for integration with non-interactive callers (Claude Code hooks,
 scripts, automation). The command is matched against tools.conf unless
@@ -50,6 +51,8 @@ func init() {
 	logCmd.Flags().StringVar(&logCmdCwd, "cwd", "", "working directory (defaults to current)")
 	logCmd.Flags().StringVar(&logCmdTag, "tag", "", "override tag (defaults to state file)")
 	logCmd.Flags().StringVar(&logCmdNote, "note", "", "override note (defaults to state file)")
+	logCmd.Flags().StringVar(&logCmdOutFile, "out-file", "", "read output from file instead of --out")
+	logCmd.Flags().StringVar(&logCmdTTY, "tty", "", "TTY device (default: auto-detect or noninteractive)")
 	logCmd.MarkFlagRequired("cmd")
 	rootCmd.AddCommand(logCmd)
 }
@@ -132,7 +135,7 @@ func runLog(cmd *cobra.Command, args []string) {
 		Epoch: now.Unix(),
 		User:  username,
 		Host:  hostname,
-		TTY:   "noninteractive",
+		TTY:   logCmdTTY,
 		Cwd:   cwd,
 		Tool:  tool,
 		Cmd:   logCmdCmd,
@@ -143,10 +146,18 @@ func runLog(cmd *cobra.Command, args []string) {
 		Out:   logCmdOut,
 	}
 
-	data, err := json.Marshal(entry)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "rtlog log: marshal error: %v\n", err)
-		os.Exit(1)
+	if entry.TTY == "" {
+		entry.TTY = "noninteractive"
+	}
+
+	if logCmdOutFile != "" {
+		data, err := os.ReadFile(logCmdOutFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not read out-file: %v\n", err)
+		} else {
+			entry.Out = string(data)
+		}
+		os.Remove(logCmdOutFile)
 	}
 
 	logDir := os.Getenv("RTLOG_DIR")
@@ -154,17 +165,17 @@ func runLog(cmd *cobra.Command, args []string) {
 		logDir = logfile.LogDir()
 	}
 	os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, engagement+".jsonl")
-
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	d, err := db.Open(logDir, engagement)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "rtlog log: cannot open log: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	defer f.Close()
+	defer d.Close()
 
-	f.Write(data)
-	f.Write([]byte("\n"))
+	if err := d.Insert(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Clear one-shot note if it was used from state
 	if !cmd.Flags().Changed("note") && note != "" {
