@@ -162,49 +162,6 @@ _rtlog_save_rc() {
     fi
 }
 
-# --- JSON-escape a string ---
-_rtlog_json_escape() {
-    local s="$1"
-    # Backslash and quote first (order matters)
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    # Standard JSON escapes
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\r'/\\r}"
-    # All remaining control characters -> \u00XX
-    s="${s//$'\x00'/\\u0000}"
-    s="${s//$'\x01'/\\u0001}"
-    s="${s//$'\x02'/\\u0002}"
-    s="${s//$'\x03'/\\u0003}"
-    s="${s//$'\x04'/\\u0004}"
-    s="${s//$'\x05'/\\u0005}"
-    s="${s//$'\x06'/\\u0006}"
-    s="${s//$'\x07'/\\u0007}"
-    s="${s//$'\x08'/\\u0008}"
-    s="${s//$'\x0b'/\\u000b}"
-    s="${s//$'\x0c'/\\u000c}"
-    s="${s//$'\x0e'/\\u000e}"
-    s="${s//$'\x0f'/\\u000f}"
-    s="${s//$'\x10'/\\u0010}"
-    s="${s//$'\x11'/\\u0011}"
-    s="${s//$'\x12'/\\u0012}"
-    s="${s//$'\x13'/\\u0013}"
-    s="${s//$'\x14'/\\u0014}"
-    s="${s//$'\x15'/\\u0015}"
-    s="${s//$'\x16'/\\u0016}"
-    s="${s//$'\x17'/\\u0017}"
-    s="${s//$'\x18'/\\u0018}"
-    s="${s//$'\x19'/\\u0019}"
-    s="${s//$'\x1a'/\\u001a}"
-    s="${s//$'\x1b'/\\u001b}"
-    s="${s//$'\x1c'/\\u001c}"
-    s="${s//$'\x1d'/\\u001d}"
-    s="${s//$'\x1e'/\\u001e}"
-    s="${s//$'\x1f'/\\u001f}"
-    REPLY="$s"
-}
-
 # --- precmd hook ---
 _rtlog_precmd() {
     (( RTLOG_DEBUG )) && echo "[rtlog:precmd] pending='$_rtlog_pending_tool'" >&2
@@ -213,60 +170,30 @@ _rtlog_precmd() {
     [[ -n "$_rtlog_pending_tool" ]] || return
 
     # Duration (use awk for float arithmetic)
-    local dur
-    dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N) - $_rtlog_pending_start}")
+    local _dur
+    _dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N) - $_rtlog_pending_start}")
 
-    # Timestamp
-    local ts epoch
-    ts="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-    epoch="$(date +%s)"
-
-    # Escape cmd
-    _rtlog_json_escape "$_rtlog_pending_cmd"
-    local escaped_cmd="$REPLY"
-
-    # Escape note
-    _rtlog_json_escape "$RTLOG_NOTE"
-    local escaped_note="$REPLY"
-
-    # Read and escape captured output
-    local escaped_out=""
-    if [[ -s "$_rtlog_tmpfile" ]]; then
-        local raw_out
-        raw_out="$(<"$_rtlog_tmpfile")"
-        _rtlog_json_escape "$raw_out"
-        escaped_out="$REPLY"
+    # Build output file argument if capture file exists
+    local _out_args=()
+    if [[ -n "$_rtlog_tmpfile" && -f "$_rtlog_tmpfile" ]]; then
+        _out_args=(--out-file "$_rtlog_tmpfile")
     fi
+
+    rtlog log \
+        --cmd "$_rtlog_pending_cmd" \
+        --tool "$_rtlog_pending_tool" \
+        --exit "$rc" \
+        --dur "$_dur" \
+        --cwd "$PWD" \
+        --tty "$_rtlog_tty" \
+        "${_out_args[@]}" 2>/dev/null
+
     command rm -f "$_rtlog_tmpfile" 2>/dev/null
 
-    # Escape metadata fields that may contain quotes, backslashes, etc.
-    _rtlog_json_escape "$USER"
-    local escaped_user="$REPLY"
-    _rtlog_json_escape "${HOSTNAME:-$(hostname)}"
-    local escaped_host="$REPLY"
-    _rtlog_json_escape "$_rtlog_tty"
-    local escaped_tty="$REPLY"
-    _rtlog_json_escape "$PWD"
-    local escaped_cwd="$REPLY"
-    _rtlog_json_escape "$RTLOG_TAG"
-    local escaped_tag="$REPLY"
-
-    # Ensure log directory exists
-    [[ -d "$RTLOG_DIR" ]] || mkdir -p "$RTLOG_DIR"
-
-    # Write JSONL entry (single line, everything inline)
-    printf '{"ts":"%s","epoch":%d,"user":"%s","host":"%s","tty":"%s","cwd":"%s","tool":"%s","cmd":"%s","exit":%d,"dur":%s,"tag":"%s","note":"%s","out":"%s"}\n' \
-        "$ts" "$epoch" "$escaped_user" "$escaped_host" "$escaped_tty" "$escaped_cwd" \
-        "$_rtlog_pending_tool" "$escaped_cmd" "$rc" "$dur" "$escaped_tag" "$escaped_note" "$escaped_out" \
-        >> "$RTLOG_DIR/${RTLOG_ENGAGEMENT}.jsonl"
-
-    # Reset (note is one-shot — clear and write back to state file)
-    local _had_note="$RTLOG_NOTE"
-    RTLOG_NOTE=""
+    # Reset
     _rtlog_pending_tool=""
     _rtlog_pending_cmd=""
     _rtlog_pending_start=""
-    [[ -n "$_had_note" ]] && _rtlog_write_state
 }
 
 # --- Hook registration ---
