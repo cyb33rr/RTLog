@@ -16,6 +16,7 @@ import (
 
 // LogEntry represents a single logged command.
 type LogEntry struct {
+	ID    int64   `json:"-"`
 	Ts    string  `json:"ts"`
 	Epoch int64   `json:"epoch"`
 	User  string  `json:"user"`
