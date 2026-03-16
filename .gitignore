@@ -11,6 +11,7 @@ PLAN.md
 PROMPT.md
 .done
 .claude/
+tasks/
 # Editor/IDE
 .vscode/
 .idea/
