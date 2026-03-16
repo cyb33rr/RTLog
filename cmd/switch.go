@@ -25,7 +25,7 @@ var switchCmd = &cobra.Command{
 		}
 
 		dir := logfile.LogDir()
-		logPath := filepath.Join(dir, name+".jsonl")
+		logPath := filepath.Join(dir, name+".db")
 
 		if _, err := os.Stat(logPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "Engagement '%s' not found.\n", name)
