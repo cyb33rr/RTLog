@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cyb33rr/rtlog/internal/db"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/cyb33rr/rtlog/internal/state"
 )
@@ -24,24 +25,23 @@ var newCmd = &cobra.Command{
 		}
 
 		dir := logfile.LogDir()
-		logPath := filepath.Join(dir, name+".jsonl")
-
-		// Create log directory and file atomically
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		dbPath := filepath.Join(dir, name+".db")
+		if _, err := os.Stat(dbPath); err == nil {
+			fmt.Fprintf(os.Stderr, "error: engagement %q already exists\n", name)
+			os.Exit(1)
+		}
+
+		d, err := db.Open(dir, name)
 		if err != nil {
-			if os.IsExist(err) {
-				fmt.Fprintf(os.Stderr, "Engagement '%s' already exists.\n", name)
-			} else {
-				fmt.Fprintf(os.Stderr, "Error creating log file: %v\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		f.Close()
+		d.Close()
 
 		// Update state: set engagement, clear tag and note
 		if _, err := state.UpdateState(map[string]string{
@@ -53,7 +53,7 @@ var newCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		fmt.Printf("[rtlog] Engagement: %s -> %s\n", name, logPath)
+		fmt.Printf("[rtlog] Engagement: %s -> %s\n", name, dbPath)
 	},
 }
 
