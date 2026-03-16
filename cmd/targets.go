@@ -38,7 +38,15 @@ func newTargetCreds() *targetCreds {
 
 func runTargets(cmd *cobra.Command, args []string) {
 	path := logfile.GetLogPath(engagementFlag)
-	entries, err := logfile.LoadEntries(path, nil)
+
+	d, err := openEngagementDB()
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	defer d.Close()
+
+	entries, err := d.LoadAll()
 	if err != nil {
 		fmt.Printf("Error loading entries: %v\n", err)
 		return

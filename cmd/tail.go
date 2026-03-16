@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
-	"strings"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/cyb33rr/rtlog/internal/db"
 	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/spf13/cobra"
@@ -21,64 +19,40 @@ var tailN int
 var tailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Live-follow the log file",
-	Long:  "Continuously watch the log file for new entries (like tail -f).",
+	Long:  "Continuously watch the log for new entries (like tail -f).",
 	Run: func(cmd *cobra.Command, args []string) {
-		path := logfile.GetLogPath(engagementFlag)
+		logPath := logfile.GetLogPath(engagementFlag)
+		dir := filepath.Dir(logPath)
+		eng := logfile.EngagementName(logPath)
 
-		// Read all lines to show the last N
-		f, err := os.Open(path)
+		d, err := db.Open(dir, eng)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening log: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
 
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-		var allLines []string
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" {
-				allLines = append(allLines, line)
-			}
+		entries, err := d.Tail(tailN)
+		if err != nil {
+			d.Close()
+			fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
+			os.Exit(1)
 		}
-		f.Close()
 
-		// Show last N entries
-		start := 0
-		if len(allLines) > tailN {
-			start = len(allLines) - tailN
+		for _, e := range entries {
+			fmt.Println(display.FmtEntry(logfile.ToMap(e), 0, 0))
 		}
-		tailLines := allLines[start:]
-		for _, line := range tailLines {
-			var entry logfile.LogEntry
-			if err := json.Unmarshal([]byte(line), &entry); err != nil {
-				continue
-			}
-			m := logfile.ToMap(entry)
-			fmt.Println(display.FmtEntry(m, 0, 0))
+
+		var lastID int64
+		if len(entries) > 0 {
+			lastID = entries[len(entries)-1].ID
 		}
+		d.Close()
 
 		// Now follow
-		engName := logfile.EngagementName(path)
-		fmt.Println(display.Colorize(fmt.Sprintf("\n-- tailing %s (Ctrl+C to stop) --\n", engName), display.Dim))
+		fmt.Println(display.Colorize(fmt.Sprintf("\n-- tailing %s (Ctrl+C to stop) --\n", eng), display.Dim))
 
-		// Handle SIGINT gracefully
 		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-		// Reopen file and seek to end
-		fTail, err := os.Open(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening log for tailing: %v\n", err)
-			os.Exit(1)
-		}
-		defer fTail.Close()
-
-		// Seek to end and record position
-		pos, _ := fTail.Seek(0, io.SeekEnd)
-
-		tailScanner := bufio.NewScanner(fTail)
-		tailScanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 		for {
 			select {
@@ -86,31 +60,22 @@ var tailCmd = &cobra.Command{
 				fmt.Println(display.Colorize("\nStopped.", display.Dim))
 				return
 			default:
-				// Detect file truncation (e.g. after rtlog clear)
-				if info, err := fTail.Stat(); err == nil && info.Size() < pos {
-					fTail.Seek(0, io.SeekStart)
-					pos = 0
-					tailScanner = bufio.NewScanner(fTail)
-					tailScanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-				}
+			}
 
-				if tailScanner.Scan() {
-					line := strings.TrimSpace(tailScanner.Text())
-					// Track position after successful read
-					pos += int64(len(tailScanner.Bytes())) + 1
-					if line == "" {
-						continue
-					}
-					var entry logfile.LogEntry
-					if err := json.Unmarshal([]byte(line), &entry); err != nil {
-						continue
-					}
-					m := logfile.ToMap(entry)
-					fmt.Println(display.FmtEntry(m, 0, 0))
-				} else {
-					// No new data, sleep and retry
-					time.Sleep(500 * time.Millisecond)
-				}
+			time.Sleep(500 * time.Millisecond)
+
+			d, err = db.Open(dir, eng)
+			if err != nil {
+				continue
+			}
+			newEntries, err := d.TailAfter(lastID)
+			d.Close()
+			if err != nil {
+				continue
+			}
+			for _, e := range newEntries {
+				fmt.Println(display.FmtEntry(logfile.ToMap(e), 0, 0))
+				lastID = e.ID
 			}
 		}
 	},

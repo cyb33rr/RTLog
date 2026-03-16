@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/cyb33rr/rtlog/internal/db"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/cyb33rr/rtlog/internal/state"
 
@@ -29,8 +31,21 @@ var clearCmd = &cobra.Command{
 		}
 
 		path := logfile.GetLogPath(eng)
-		count := logfile.CountEntries(path)
 		name := logfile.EngagementName(path)
+		dir := filepath.Dir(path)
+
+		d, err := db.Open(dir, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+			os.Exit(1)
+		}
+		defer d.Close()
+
+		count, err := d.Count()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error counting entries: %v\n", err)
+			os.Exit(1)
+		}
 
 		if count == 0 {
 			fmt.Printf("Log %s is already empty.\n", name)
@@ -52,7 +67,7 @@ var clearCmd = &cobra.Command{
 			}
 		}
 
-		if err := os.Truncate(path, 0); err != nil {
+		if err := d.Clear(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error clearing log: %v\n", err)
 			os.Exit(1)
 		}

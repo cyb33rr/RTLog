@@ -17,25 +17,23 @@ var searchCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		keyword := args[0]
-		path := logfile.GetLogPath(engagementFlag)
-		entries, err := logfile.LoadEntries(path, nil)
+
+		d, err := openEngagementDB()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		defer d.Close()
+
+		matches, err := d.Search(keyword)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error searching entries: %v\n", err)
 			os.Exit(1)
 		}
 
 		pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(keyword))
 
-		var matches []logfile.LogEntry
-		for _, entry := range entries {
-			for _, val := range []string{entry.Cmd, entry.Tool, entry.Cwd, entry.Tag, entry.Note, entry.User, entry.Host} {
-				if val != "" && pattern.MatchString(val) {
-					matches = append(matches, entry)
-					break
-				}
-			}
-		}
-
+		path := logfile.GetLogPath(engagementFlag)
 		engName := logfile.EngagementName(path)
 		if len(matches) == 0 {
 			fmt.Printf("No matches for '%s' in %s\n", keyword, engName)

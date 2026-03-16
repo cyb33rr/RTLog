@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+
 var showToday bool
 var showDate string
 var showOutput bool
@@ -19,23 +20,34 @@ var showCmd = &cobra.Command{
 	Short: "Pretty-print log entries",
 	Long:  "Display log entries in a human-readable format, optionally filtered by date.",
 	Run: func(cmd *cobra.Command, args []string) {
-		path := logfile.GetLogPath(engagementFlag)
-
-		var dateFilter *time.Time
-		if showToday {
-			now := time.Now()
-			today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-			dateFilter = &today
-		} else if showDate != "" {
-			d, err := time.Parse("2006-01-02", showDate)
-			if err != nil {
+		// Validate date flag early
+		if showDate != "" {
+			if _, err := time.Parse("2006-01-02", showDate); err != nil {
 				fmt.Fprintf(os.Stderr, "Invalid date format: %s (expected YYYY-MM-DD)\n", showDate)
 				os.Exit(1)
 			}
-			dateFilter = &d
 		}
 
-		entries, err := logfile.LoadEntries(path, dateFilter)
+		d, err := openEngagementDB()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		defer d.Close()
+
+		path := logfile.GetLogPath(engagementFlag)
+		var dateLabel string
+		var entries []logfile.LogEntry
+		if showDate != "" {
+			entries, err = d.LoadByDate(showDate)
+			dateLabel = showDate
+		} else if showToday {
+			today := time.Now().UTC().Format("2006-01-02")
+			entries, err = d.LoadByDate(today)
+			dateLabel = today
+		} else {
+			entries, err = d.LoadAll()
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
 			os.Exit(1)
@@ -43,16 +55,16 @@ var showCmd = &cobra.Command{
 
 		if len(entries) == 0 {
 			label := ""
-			if dateFilter != nil {
-				label = fmt.Sprintf(" for %s", dateFilter.Format("2006-01-02"))
+			if dateLabel != "" {
+				label = fmt.Sprintf(" for %s", dateLabel)
 			}
 			fmt.Printf("No entries found%s in %s\n", label, logfile.EngagementName(path))
 			return
 		}
 
 		header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
-		if dateFilter != nil {
-			header += fmt.Sprintf("  [%s]", dateFilter.Format("2006-01-02"))
+		if dateLabel != "" {
+			header += fmt.Sprintf("  [%s]", dateLabel)
 		}
 
 		idxWidth := len(fmt.Sprintf("%d", len(entries)))

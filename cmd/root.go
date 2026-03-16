@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cyb33rr/rtlog/internal/db"
 	"github.com/cyb33rr/rtlog/internal/extract"
+	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +22,8 @@ var rootCmd = &cobra.Command{
 	Short: "Query and analyze red team operation logs",
 	Long: `Query and analyze red team operation logs from ~/.rt/logs/.
 
-Log files are stored as JSONL in ~/.rt/logs/<engagement>.jsonl.
-If no engagement is specified with -e, the most recently modified file is used.`,
+Log entries are stored in SQLite databases at ~/.rt/logs/<engagement>.db.
+If no engagement is specified with -e, the most recently modified database is used.`,
 	Version: Version,
 }
 
@@ -48,6 +50,17 @@ func init() {
 		_ = extract.LoadUserConfig(configPath)
 		return nil
 	}
+}
+
+// openEngagementDB opens the SQLite database for the current engagement.
+func openEngagementDB() (*db.DB, error) {
+	logPath := logfile.GetLogPath(engagementFlag)
+	if logPath == "" {
+		return nil, fmt.Errorf("no active engagement (use 'rtlog new' or 'rtlog switch')")
+	}
+	dir := filepath.Dir(logPath)
+	eng := logfile.EngagementName(logPath)
+	return db.Open(dir, eng)
 }
 
 // Execute runs the root command.

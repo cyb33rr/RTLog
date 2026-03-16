@@ -56,7 +56,14 @@ var tagCmd = &cobra.Command{
 func listTags() {
 	logPath := logfile.GetLogPath(engagementFlag)
 
-	entries, err := logfile.LoadEntries(logPath, nil)
+	d, err := openEngagementDB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	defer d.Close()
+
+	entries, err := d.LoadAll()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
 		os.Exit(1)

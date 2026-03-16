@@ -1,8 +1,6 @@
 package logfile
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,8 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/cyb33rr/rtlog/internal/timeutil"
 )
 
 // LogEntry represents a single logged command.
@@ -66,84 +62,16 @@ func LogDir() string {
 	return filepath.Join(home, ".rt", "logs")
 }
 
-// LoadEntries reads JSONL entries from path, optionally filtering by date.
-// Malformed lines are skipped with a warning on stderr.
-func LoadEntries(path string, dateFilter *time.Time) ([]LogEntry, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var entries []LogEntry
-	scanner := bufio.NewScanner(f)
-	// Allow up to 10MB lines for entries with large captured output.
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	lineno := 0
-
-	for scanner.Scan() {
-		lineno++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		var entry LogEntry
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			// Retry after stripping stray control chars
-			sanitized := RE_JSON_CTRL.ReplaceAllString(line, "")
-			if err2 := json.Unmarshal([]byte(sanitized), &entry); err2 != nil {
-				fmt.Fprintf(os.Stderr, "Warning: skipping malformed line %d in %s: %v\n", lineno, path, err2)
-				continue
-			}
-		}
-
-		if dateFilter != nil {
-			entryDate, err := parseDate(entry.Ts)
-			if err != nil {
-				continue
-			}
-			filterDate := dateFilter.Format("2006-01-02")
-			if entryDate != filterDate {
-				continue
-			}
-		}
-
-		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return entries, err
-	}
-
-	return entries, nil
-}
-
-// parseDate extracts the YYYY-MM-DD portion from an ISO timestamp.
-func parseDate(ts string) (string, error) {
-	if ts == "" {
-		return "", fmt.Errorf("empty timestamp")
-	}
-	if t, err := timeutil.Parse(ts); err == nil {
-		return t.Format("2006-01-02"), nil
-	}
-	// Try extracting date prefix directly
-	if len(ts) >= 10 {
-		return ts[:10], nil
-	}
-	return "", fmt.Errorf("cannot parse timestamp: %s", ts)
-}
-
 // engagementInfo holds path and mtime for sorting.
 type engagementInfo struct {
 	Path  string
 	Mtime time.Time
 }
 
-// AvailableEngagements returns .jsonl file paths sorted by mtime (newest first).
+// AvailableEngagements returns .db file paths sorted by mtime (newest first).
 func AvailableEngagements() []string {
 	dir := LogDir()
-	matches, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+	matches, err := filepath.Glob(filepath.Join(dir, "*.db"))
 	if err != nil || len(matches) == 0 {
 		return nil
 	}
@@ -168,7 +96,7 @@ func AvailableEngagements() []string {
 	return result
 }
 
-// GetLogPath resolves an engagement name to its .jsonl file path.
+// GetLogPath resolves an engagement name to its .db file path.
 // If engagement is empty, returns the most recently modified file.
 // Prints diagnostics on failure and calls os.Exit(1).
 func GetLogPath(engagement string) string {
@@ -176,7 +104,7 @@ func GetLogPath(engagement string) string {
 
 	if engagement != "" {
 		// Try direct path first (O(1) instead of listing all files)
-		candidate := filepath.Join(dir, engagement+".jsonl")
+		candidate := filepath.Join(dir, engagement+".db")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
@@ -195,7 +123,7 @@ func GetLogPath(engagement string) string {
 
 	files := AvailableEngagements()
 	if len(files) == 0 {
-		fmt.Fprintf(os.Stderr, "No .jsonl log files found in %s\n", dir)
+		fmt.Fprintf(os.Stderr, "No log databases found in %s\n", dir)
 		fmt.Fprintln(os.Stderr, "Create one with: rtlog new <name>")
 		os.Exit(1)
 	}
@@ -203,28 +131,9 @@ func GetLogPath(engagement string) string {
 	return files[0]
 }
 
-// CountEntries counts non-empty lines in a JSONL file without deserializing.
-func CountEntries(path string) int {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-
-	count := 0
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) != "" {
-			count++
-		}
-	}
-	return count
-}
-
-// EngagementName extracts the stem name from a .jsonl path.
+// EngagementName extracts the stem name from a .db path.
 func EngagementName(path string) string {
-	return strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	return strings.TrimSuffix(filepath.Base(path), ".db")
 }
 
 // ToMap converts a LogEntry to a map for use with display functions.
