@@ -27,10 +27,12 @@ var setupCmd = &cobra.Command{
 
 Steps performed:
   1. Create ~/.rt/logs/ and ~/.local/bin/
-  2. Write embedded hook files (hook.zsh, hook.bash, bash-preexec.sh) and tools.conf to ~/.rt/
-  3. Copy this binary to ~/.rt/rtlog  (skipped if already on PATH, e.g. go install)
+  2. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
+  3. Copy this binary to ~/.rt/rtlog  (skipped if already on PATH)
   4. Create symlink ~/.local/bin/rtlog  (skipped if already on PATH)
-  5. Configure ~/.zshrc and/or ~/.bashrc (hook source line; PATH export only if symlink was created)`,
+  5. Configure ~/.zshrc and/or ~/.bashrc (hook source line; PATH export)
+  6. Configure ~/.zshenv for non-interactive zsh capture
+  7. Export BASH_ENV in shell rc files for non-interactive bash capture`,
 	Args: cobra.NoArgs,
 	Run:  runSetup,
 }
@@ -65,6 +67,8 @@ func runSetup(cmd *cobra.Command, args []string) {
 	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"))
 	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"))
 	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"))
+	setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"))
+	setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"))
 
 	// 3-4. Copy binary + symlink (skip if already on PATH, e.g. go install)
 	onPath := isOnPath()
@@ -89,6 +93,18 @@ func runSetup(cmd *cobra.Command, args []string) {
 	if !zshrcExists && !bashrcExists {
 		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
 		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
+	}
+
+	// 6. Configure ~/.zshenv for non-interactive zsh capture
+	zshenv := filepath.Join(home, ".zshenv")
+	setupZshenv(zshenv, rtDir)
+
+	// 7. Export BASH_ENV in shell rc files for non-interactive bash capture
+	if zshrcExists {
+		setupBashEnv(zshrc, rtDir, ".zshrc")
+	}
+	if bashrcExists {
+		setupBashEnv(bashrc, rtDir, ".bashrc")
 	}
 
 	fmt.Println()
@@ -389,4 +405,108 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, 
 		fmt.Fprintf(os.Stderr, "[!]  Failed to update %s: %v\n", rcName, err)
 		os.Exit(1)
 	}
+}
+
+// setupZshenv ensures the non-interactive zsh hook is sourced from ~/.zshenv.
+func setupZshenv(zshenvPath, rtDir string) {
+	sourceLine := fmt.Sprintf("source %s/.rt/hook-noninteractive.zsh", "$HOME")
+
+	content, err := os.ReadFile(zshenvPath)
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "[!]  Cannot read .zshenv: %v\n", err)
+		return
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == sourceLine {
+			fmt.Println("[ok] Non-interactive zsh hook already in .zshenv")
+			return
+		}
+	}
+
+	lines = append(lines, "", "# RTLog non-interactive capture", sourceLine)
+	lines = collapseBlankLines(lines)
+	newContent := strings.Join(lines, "\n")
+
+	if string(content) == newContent {
+		return
+	}
+
+	dir := filepath.Dir(zshenvPath)
+	tmp, err := os.CreateTemp(dir, ".zshenv.")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.WriteString(newContent); err != nil {
+		tmp.Close()
+		fmt.Fprintf(os.Stderr, "[!]  Failed to write .zshenv: %v\n", err)
+		return
+	}
+	if info, err := os.Stat(zshenvPath); err == nil {
+		tmp.Chmod(info.Mode())
+	} else {
+		tmp.Chmod(0644)
+	}
+	if err := tmp.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to close temp file: %v\n", err)
+		return
+	}
+	if err := os.Rename(tmpName, zshenvPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to update .zshenv: %v\n", err)
+		return
+	}
+	fmt.Println("[+]  Added non-interactive hook to .zshenv")
+}
+
+// setupBashEnv ensures BASH_ENV is exported in the given rc file.
+func setupBashEnv(rcFile, rtDir, rcName string) {
+	exportLine := fmt.Sprintf(`export BASH_ENV="%s/.rt/hook-noninteractive.bash"`, "$HOME")
+
+	content, err := os.ReadFile(rcFile)
+	if err != nil {
+		return // file doesn't exist, skip
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == exportLine {
+			fmt.Printf("[ok] BASH_ENV already exported in %s\n", rcName)
+			return
+		}
+	}
+
+	lines = append(lines, "", "# RTLog non-interactive bash capture", exportLine)
+	lines = collapseBlankLines(lines)
+	newContent := strings.Join(lines, "\n")
+
+	if string(content) == newContent {
+		return
+	}
+
+	dir := filepath.Dir(rcFile)
+	tmp, err := os.CreateTemp(dir, "."+rcName+".")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.WriteString(newContent); err != nil {
+		tmp.Close()
+		return
+	}
+	if info, err := os.Stat(rcFile); err == nil {
+		tmp.Chmod(info.Mode())
+	} else {
+		tmp.Chmod(0644)
+	}
+	tmp.Close()
+	os.Rename(tmpName, rcFile)
+	fmt.Printf("[+]  Added BASH_ENV export to %s\n", rcName)
 }

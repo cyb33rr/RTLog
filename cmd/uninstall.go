@@ -56,6 +56,14 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
 	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
 
+	// Clean non-interactive hook lines from .zshenv
+	zshenv := filepath.Join(home, ".zshenv")
+	uninstallCleanNonInteractive(zshenv, ".zshenv")
+
+	// Clean BASH_ENV export from rc files
+	uninstallCleanNonInteractive(zshrc, ".zshrc")
+	uninstallCleanNonInteractive(bashrc, ".bashrc")
+
 	// 3. Remove ~/.rt/ (prompt first)
 	uninstallRemoveDir(rtDir)
 
@@ -173,6 +181,58 @@ func uninstallCleanShellRc(rcFile, hookPattern, rcName string) {
 		return
 	}
 	fmt.Printf("[-]  Removed hook lines from %s\n", rcName)
+}
+
+// uninstallCleanNonInteractive removes non-interactive hook lines from a file:
+// - "# RTLog non-interactive capture" comment
+// - "# RTLog non-interactive bash capture" comment
+// - source line for hook-noninteractive.zsh
+// - BASH_ENV export for hook-noninteractive.bash
+func uninstallCleanNonInteractive(rcFile, rcName string) {
+	content, err := os.ReadFile(rcFile)
+	if err != nil {
+		return
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	removed := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "# RTLog non-interactive capture" ||
+			trimmed == "# RTLog non-interactive bash capture" ||
+			(strings.Contains(trimmed, "source") && strings.Contains(trimmed, "hook-noninteractive.zsh")) ||
+			(strings.Contains(trimmed, "BASH_ENV") && strings.Contains(trimmed, "hook-noninteractive.bash")) {
+			removed = true
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	if !removed {
+		return
+	}
+
+	newLines = collapseBlankLines(newLines)
+	newContent := strings.Join(newLines, "\n")
+	dir := filepath.Dir(rcFile)
+	tmp, err := os.CreateTemp(dir, "."+rcName+".")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	tmp.WriteString(newContent)
+	if info, err := os.Stat(rcFile); err == nil {
+		tmp.Chmod(info.Mode())
+	} else {
+		tmp.Chmod(0644)
+	}
+	tmp.Close()
+	os.Rename(tmpName, rcFile)
+	fmt.Printf("[-]  Removed non-interactive hook lines from %s\n", rcName)
 }
 
 // uninstallRemoveDir removes ~/.rt/ after confirmation.
