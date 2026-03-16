@@ -125,7 +125,7 @@ _rtlog_ni_debug_handler() {
     _rtlog_ni_match "$tool" || return
 
     # Matched — record pending state
-    zmodload -F zsh/datetime b:EPOCHREALTIME
+    zmodload -F zsh/datetime p:EPOCHREALTIME
     _rtlog_ni_pending_tool="$tool"
     _rtlog_ni_pending_cmd="$cmd"
     _rtlog_ni_pending_start="$EPOCHREALTIME"
@@ -157,7 +157,7 @@ _rtlog_ni_exit_handler() {
     [[ -n "$_rtlog_ni_pending_tool" ]] || return
 
     # Duration
-    zmodload -F zsh/datetime b:EPOCHREALTIME b:EPOCHSECONDS p:strftime
+    zmodload -F zsh/datetime p:EPOCHREALTIME p:EPOCHSECONDS b:strftime
     local dur=$(( EPOCHREALTIME - _rtlog_ni_pending_start ))
     printf -v dur '%.1f' "$dur"
 
