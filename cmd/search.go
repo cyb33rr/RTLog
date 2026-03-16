@@ -33,7 +33,11 @@ var searchCmd = &cobra.Command{
 
 		pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(keyword))
 
-		path := logfile.GetLogPath(engagementFlag)
+		path, err := logfile.GetLogPath(engagementFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		engName := logfile.EngagementName(path)
 		if len(matches) == 0 {
 			fmt.Printf("No matches for '%s' in %s\n", keyword, engName)

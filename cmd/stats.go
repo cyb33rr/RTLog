@@ -28,7 +28,11 @@ var statsCmd = &cobra.Command{
 	Short: "Summary statistics for the engagement",
 	Long:  "Show total commands, per-tool breakdown, success rate, and time span.",
 	Run: func(cmd *cobra.Command, args []string) {
-		path := logfile.GetLogPath(engagementFlag)
+		path, err := logfile.GetLogPath(engagementFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 		d, err := openEngagementDB()
 		if err != nil {

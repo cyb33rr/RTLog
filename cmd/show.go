@@ -28,14 +28,18 @@ var showCmd = &cobra.Command{
 			}
 		}
 
+		path, err := logfile.GetLogPath(engagementFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+
 		d, err := openEngagementDB()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		defer d.Close()
-
-		path := logfile.GetLogPath(engagementFlag)
 		var dateLabel string
 		var entries []logfile.LogEntry
 		if showDate != "" {
@@ -75,11 +79,19 @@ var showCmd = &cobra.Command{
 			entryMaps[i] = logfile.ToMap(e)
 		}
 
+		// Default to reverse order (newest first)
+		for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
+			entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
+		}
+
+		n := len(entryMaps)
+		origIdx := func(i int) int { return n - i }
+
 		if showOutput {
 			fmt.Println(display.Colorize(header, display.Bold))
 			fmt.Println()
 			for i, m := range entryMaps {
-				fmt.Println(display.FmtEntry(m, i+1, idxWidth, false))
+				fmt.Println(display.FmtEntry(m, origIdx(i), idxWidth, false))
 				display.PrintOutputBlock(m, true)
 			}
 		} else if display.IsTTY {
@@ -92,7 +104,7 @@ var showCmd = &cobra.Command{
 			fmt.Println(display.Colorize(header, display.Bold))
 			fmt.Println()
 			for i, m := range entryMaps {
-				fmt.Println(display.FmtEntry(m, i+1, idxWidth))
+				fmt.Println(display.FmtEntry(m, origIdx(i), idxWidth))
 			}
 		}
 	},

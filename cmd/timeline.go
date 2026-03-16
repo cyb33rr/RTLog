@@ -17,7 +17,11 @@ var timelineCmd = &cobra.Command{
 	Short: "Chronological view grouped by date and tag",
 	Long:  "Group log entries by date and tag, showing a chronological operation flow.",
 	Run: func(cmd *cobra.Command, args []string) {
-		path := logfile.GetLogPath(engagementFlag)
+		path, err := logfile.GetLogPath(engagementFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 
 		d, err := openEngagementDB()
 		if err != nil {

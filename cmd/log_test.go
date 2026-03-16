@@ -32,12 +32,12 @@ func TestLogWritesEntry(t *testing.T) {
 	os.WriteFile(filepath.Join(rtDir, "state"), []byte("engagement=test-eng\ntag=recon\nnote=\nenabled=1\ncapture=1\n"), 0644)
 	os.WriteFile(filepath.Join(rtDir, "tools.conf"), []byte("nmap\ngobuster\n"), 0644)
 
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
 
 	rootCmd.SetArgs([]string{"log", "--cmd", "nmap -sV 10.10.10.5", "--exit", "0", "--dur", "5.2"})
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() failed: %v", err)
+	}
 
 	d, err := db.Open(logDir, "test-eng")
 	if err != nil {
@@ -79,12 +79,12 @@ func TestLogSkipsUnmatchedTool(t *testing.T) {
 	os.WriteFile(filepath.Join(rtDir, "state"), []byte("engagement=test-eng\ntag=\nnote=\nenabled=1\ncapture=1\n"), 0644)
 	os.WriteFile(filepath.Join(rtDir, "tools.conf"), []byte("nmap\n"), 0644)
 
-	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
 
 	rootCmd.SetArgs([]string{"log", "--cmd", "vim foo.txt"})
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() failed: %v", err)
+	}
 
 	dbPath := filepath.Join(logDir, "test-eng.db")
 	if _, err := os.Stat(dbPath); err == nil {

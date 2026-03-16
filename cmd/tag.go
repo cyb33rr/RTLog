@@ -54,7 +54,11 @@ var tagCmd = &cobra.Command{
 }
 
 func listTags() {
-	logPath := logfile.GetLogPath(engagementFlag)
+	logPath, err := logfile.GetLogPath(engagementFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	d, err := openEngagementDB()
 	if err != nil {

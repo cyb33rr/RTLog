@@ -18,9 +18,10 @@ var (
 	RE_LONG_PASS *regexp.Regexp
 	RE_LONG_HASH *regexp.Regexp
 
-	// RE_CRED_INLINE matches inline domain/user:pass@host patterns.
+	// RE_CRED_INLINE matches inline domain/user:pass@host patterns,
+	// including an optional :port suffix after the host.
 	RE_CRED_INLINE = regexp.MustCompile(
-		`(?:^|\s)(?:([A-Za-z0-9._-]+)/)?([A-Za-z0-9._-]+):(\S+)@([A-Za-z0-9._-]+)(?:\s|$)`,
+		`(?:^|\s)(?:([A-Za-z0-9._-]+)/)?([A-Za-z0-9._-]+):(\S+)@([A-Za-z0-9._-]+)(?::\d{1,5})?(?:\s|$)`,
 	)
 
 	// RE_SETVAR_CRED matches Metasploit set-variable credential patterns.

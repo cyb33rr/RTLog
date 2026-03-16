@@ -2,6 +2,7 @@ package match
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,10 @@ func LoadTools(path string) (*Matcher, error) {
 			continue
 		}
 		if strings.ContainsAny(line, "*?") {
+			if _, err := filepath.Match(line, ""); err != nil {
+				fmt.Fprintf(os.Stderr, "rtlog: warning: invalid glob pattern %q in tools.conf: %v\n", line, err)
+				continue
+			}
 			m.globs = append(m.globs, line)
 		} else {
 			m.exact[line] = true
@@ -77,7 +82,12 @@ func ExtractTool(cmd string) string {
 				for len(fields) > 0 && strings.HasPrefix(fields[0], "-") {
 					flag := fields[0]
 					fields = fields[1:]
-					if len(flag) == 2 && strings.ContainsAny(string(flag[1]), "ugCDRT") && len(fields) > 0 {
+					if strings.HasPrefix(flag, "--") {
+						// Long flag: if no "=", the next token is its argument
+						if !strings.Contains(flag, "=") && len(fields) > 0 {
+							fields = fields[1:]
+						}
+					} else if len(flag) == 2 && strings.ContainsAny(string(flag[1]), "ugCDRTprtU") && len(fields) > 0 {
 						fields = fields[1:]
 					}
 				}

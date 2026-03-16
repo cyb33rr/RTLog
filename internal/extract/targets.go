@@ -133,6 +133,11 @@ func isVersionContext(cmd string, matchStart int) bool {
 		return true
 	}
 	if prev == '/' {
+		// If the character before the '/' is '=', this is a --flag=/value
+		// assignment, not a version string — don't filter it.
+		if matchStart >= 2 && cmd[matchStart-2] == '=' {
+			return false
+		}
 		// Check if it looks like a path/version: e.g., Python/3.10.5
 		before := strings.TrimRight(cmd[:matchStart], " \t")
 		if len(before) > 0 && before[len(before)-1] != ' ' && before[len(before)-1] != '\t' {
@@ -317,9 +322,9 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 			portStr = cmd[m[4]:m[5]]
 		}
 		if isValidIPv4(host) {
-			addIP(host, portStr, "", m[2], m[1])
+			addIP(host, portStr, "", m[2], m[3])
 		} else {
-			addHost(host, portStr, m[2], m[1])
+			addHost(host, portStr, m[2], m[3])
 		}
 	}
 
@@ -331,9 +336,9 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 			portStr = cmd[m[4]:m[5]]
 		}
 		if isValidIPv4(host) {
-			addIP(host, portStr, "", m[2], m[1])
+			addIP(host, portStr, "", m[2], m[3])
 		} else {
-			addHost(host, portStr, m[2], m[1])
+			addHost(host, portStr, m[2], m[3])
 		}
 	}
 
@@ -346,9 +351,9 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 				portStr = cmd[m[4]:m[5]]
 			}
 			if isValidIPv4(host) {
-				addIP(host, portStr, "", m[2], m[1])
+				addIP(host, portStr, "", m[2], m[3])
 			} else {
-				addHost(host, portStr, m[2], m[1])
+				addHost(host, portStr, m[2], m[3])
 			}
 		}
 	}
@@ -362,9 +367,9 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 				portStr = cmd[m[4]:m[5]]
 			}
 			if isValidIPv4(host) {
-				addIP(host, portStr, "", m[2], m[1])
+				addIP(host, portStr, "", m[2], m[3])
 			} else {
-				addHost(host, portStr, m[2], m[1])
+				addHost(host, portStr, m[2], m[3])
 			}
 		}
 	}

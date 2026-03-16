@@ -36,6 +36,11 @@ func importFile(path string) {
 		return
 	}
 
+	if err := logfile.ValidateEngagementName(eng); err != nil {
+		fmt.Fprintf(os.Stderr, "skip: %s: invalid engagement name: %v\n", path, err)
+		return
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
@@ -80,6 +85,10 @@ func importFile(path string) {
 		imported++
 	}
 
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: error reading %s: %v\n", path, err)
+	}
+
 	fmt.Printf("Imported %d entries into engagement %q", imported, eng)
 	if skipped > 0 {
 		fmt.Printf(" (%d duplicates skipped)", skipped)
@@ -91,5 +100,5 @@ func importFile(path string) {
 }
 
 func dedupKey(e logfile.LogEntry) string {
-	return fmt.Sprintf("%d|%s|%s|%s", e.Epoch, e.Cmd, e.Tool, e.Cwd)
+	return fmt.Sprintf("%d\x00%s\x00%s\x00%s", e.Epoch, e.Cmd, e.Tool, e.Cwd)
 }

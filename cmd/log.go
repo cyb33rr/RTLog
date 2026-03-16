@@ -156,8 +156,8 @@ func runLog(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "warning: could not read out-file: %v\n", err)
 		} else {
 			entry.Out = string(data)
+			os.Remove(logCmdOutFile)
 		}
-		os.Remove(logCmdOutFile)
 	}
 
 	logDir := os.Getenv("RTLOG_DIR")

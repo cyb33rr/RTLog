@@ -59,7 +59,7 @@ _rtlog_tty=$(tty 2>/dev/null) || true
 [[ "$_rtlog_tty" == /dev/* ]] || _rtlog_tty="unknown"
 
 # --- Temp file for output capture (per-shell PID) ---
-_rtlog_tmpfile="/tmp/.rtlog_out.$$"
+_rtlog_tmpfile=$(mktemp /tmp/.rtlog_out.XXXXXXXX)
 
 # --- Load tools.conf ---
 _rtlog_load_conf() {
@@ -136,7 +136,7 @@ _rtlog_preexec() {
 
     _rtlog_pending_tool="$tool"
     _rtlog_pending_cmd="$1"
-    _rtlog_pending_start="$(date +%s.%N)"
+    _rtlog_pending_start="$(date +%s.%N 2>/dev/null || date +%s)"
     _rtlog_pending_rc=""
     _rtlog_capturing=0
 
@@ -159,6 +159,7 @@ _rtlog_save_rc() {
         _rtlog_fd_out=""
         _rtlog_fd_err=""
         _rtlog_capturing=0
+        command sleep 0.05 2>/dev/null
     fi
 }
 
@@ -171,7 +172,7 @@ _rtlog_precmd() {
 
     # Duration (use awk for float arithmetic)
     local _dur
-    _dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N) - $_rtlog_pending_start}")
+    _dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N 2>/dev/null || date +%s) - $_rtlog_pending_start}")
 
     # Build output file argument if capture file exists
     local _out_args=()

@@ -16,7 +16,7 @@ _rtlog_ni_engagement="" _rtlog_ni_tag="" _rtlog_ni_note=""
 _rtlog_ni_enabled="1" _rtlog_ni_capture="1"
 
 {
-    local key val
+    key="" val=""
     while IFS='=' read -r key val; do
         case "$key" in
             engagement) _rtlog_ni_engagement="$val" ;;
@@ -39,7 +39,7 @@ _rtlog_ni_conf="${HOME}/.rt/tools.conf"
 [[ -r "$_rtlog_ni_conf" ]] || return 0
 
 {
-    local line
+    line=""
     while IFS= read -r line; do
         line="${line#"${line%%[![:space:]]*}"}"
         line="${line%"${line##*[![:space:]]}"}"
@@ -68,7 +68,7 @@ _rtlog_ni_pending_cmd=""
 _rtlog_ni_pending_start=""
 _rtlog_ni_capturing=0
 _rtlog_ni_fd_out="" _rtlog_ni_fd_err=""
-_rtlog_ni_outfile="/tmp/.rtlog_ni_out.$$"
+_rtlog_ni_outfile=$(mktemp /tmp/.rtlog_ni_out.XXXXXXXX)
 
 # --- DEBUG trap handler ---
 _rtlog_ni_debug_handler() {
@@ -100,7 +100,7 @@ _rtlog_ni_debug_handler() {
 
     _rtlog_ni_pending_tool="$tool"
     _rtlog_ni_pending_cmd="$cmd"
-    _rtlog_ni_pending_start="$(date +%s.%N)"
+    _rtlog_ni_pending_start="$(date +%s.%N 2>/dev/null || date +%s)"
 
     # Output capture
     if [[ "$_rtlog_ni_capture" == "1" ]]; then
@@ -127,7 +127,7 @@ _rtlog_ni_exit_handler() {
 
     # Duration (use awk for float arithmetic)
     local _dur
-    _dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N) - $_rtlog_ni_pending_start}")
+    _dur=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N 2>/dev/null || date +%s) - $_rtlog_ni_pending_start}")
 
     # Build output file argument if capture file exists
     local _out_args=()

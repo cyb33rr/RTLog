@@ -17,14 +17,14 @@ func ExportMarkdown(entries []logfile.LogEntry) string {
 
 	for _, e := range entries {
 		ts := formatTS(e.Ts)
-		tool := e.Tool
+		tool := escapePipe(e.Tool)
 		cmd := escapePipe(e.Cmd)
 		cmd = strings.ReplaceAll(cmd, "`", "\\`")
 		cmd = strings.ReplaceAll(cmd, "\n", "<br>")
 		exit := fmt.Sprintf("%d", e.Exit)
 		dur := fmt.Sprintf("%g", e.Dur)
-		tag := e.Tag
-		note := escapePipe(e.Note)
+		tag := escapePipe(e.Tag)
+		note := escapePipe(strings.ReplaceAll(e.Note, "\n", "<br>"))
 		out := escapePipe(strings.ReplaceAll(strings.TrimSpace(e.Out), "\n", "<br>"))
 
 		fmt.Fprintf(&b, "| %s | %s | `%s` | %s | %ss | %s | %s | %s |\n",

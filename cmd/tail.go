@@ -21,7 +21,11 @@ var tailCmd = &cobra.Command{
 	Short: "Live-follow the log file",
 	Long:  "Continuously watch the log for new entries (like tail -f).",
 	Run: func(cmd *cobra.Command, args []string) {
-		logPath := logfile.GetLogPath(engagementFlag)
+		logPath, err := logfile.GetLogPath(engagementFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		dir := filepath.Dir(logPath)
 		eng := logfile.EngagementName(logPath)
 

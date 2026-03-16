@@ -45,7 +45,7 @@ type DB struct {
 // It enables WAL mode and, for new databases, creates the schema and stamps
 // PRAGMA user_version.
 func Open(dir, engagement string) (*DB, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
@@ -61,6 +61,12 @@ func Open(dir, engagement string) (*DB, error) {
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
 
+	// Avoid "database is locked" errors under concurrent access.
+	if _, err := conn.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+
 	// Check existing schema version.
 	var version int
 	if err := conn.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
@@ -68,15 +74,30 @@ func Open(dir, engagement string) (*DB, error) {
 		return nil, fmt.Errorf("read user_version: %w", err)
 	}
 
+	if version > schemaVersion {
+		fmt.Fprintf(os.Stderr, "warning: database schema version %d > expected %d; some features may not work correctly\n", version, schemaVersion)
+	}
+
 	// Only create schema and stamp version on a fresh database.
 	if version == 0 {
-		if _, err := conn.Exec(schemaSQL); err != nil {
+		tx, err := conn.Begin()
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("begin schema tx: %w", err)
+		}
+		if _, err := tx.Exec(schemaSQL); err != nil {
+			tx.Rollback()
 			conn.Close()
 			return nil, fmt.Errorf("create schema: %w", err)
 		}
-		if _, err := conn.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+			tx.Rollback()
 			conn.Close()
 			return nil, fmt.Errorf("set user_version: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("commit schema tx: %w", err)
 		}
 	}
 
@@ -149,11 +170,15 @@ func (d *DB) Count() (int, error) {
 	return count, nil
 }
 
-// Clear deletes all entries from the database.
+// Clear deletes all entries from the database and resets the AUTOINCREMENT counter.
 func (d *DB) Clear() error {
 	_, err := d.db.Exec("DELETE FROM entries")
 	if err != nil {
 		return fmt.Errorf("clear entries: %w", err)
+	}
+	_, err = d.db.Exec("DELETE FROM sqlite_sequence WHERE name = 'entries'")
+	if err != nil {
+		return fmt.Errorf("reset sequence: %w", err)
 	}
 	return nil
 }

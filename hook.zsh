@@ -56,7 +56,7 @@ _rtlog_tty=$(tty 2>/dev/null) || true
 [[ "$_rtlog_tty" == /dev/* ]] || _rtlog_tty="unknown"
 
 # --- Temp file for output capture (per-shell PID) ---
-_rtlog_tmpfile="/tmp/.rtlog_out.$$"
+_rtlog_tmpfile=$(mktemp /tmp/.rtlog_out.XXXXXXXX)
 
 # --- Load tools.conf ---
 _rtlog_load_conf() {
@@ -154,6 +154,7 @@ _rtlog_save_rc() {
         _rtlog_fd_out=""
         _rtlog_fd_err=""
         _rtlog_capturing=0
+        command sleep 0.05 2>/dev/null
     fi
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"embed"
 	"fmt"
@@ -62,13 +63,13 @@ func runSetup(cmd *cobra.Command, args []string) {
 	setupCreateDir(localBin)
 
 	// 2. Write embedded files (both shells, always)
-	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"))
-	setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"))
-	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"))
-	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"))
-	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"))
-	setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"))
-	setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"))
+	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"), false)
+	setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"), false)
+	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false)
+	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"), true)
+	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"), true)
+	setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false)
+	setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false)
 
 	// 3-4. Copy binary + symlink (skip if already on PATH, e.g. go install)
 	onPath := isOnPath()
@@ -111,7 +112,9 @@ func runSetup(cmd *cobra.Command, args []string) {
 	fmt.Println("=== Setup complete ===")
 	fmt.Println()
 	fmt.Println("Quick-start:")
-	if zshrcExists {
+	if zshrcExists && bashrcExists {
+		fmt.Println("  1. Reload shell:     source ~/.zshrc  (or source ~/.bashrc)")
+	} else if zshrcExists {
 		fmt.Println("  1. Reload shell:     source ~/.zshrc")
 	} else if bashrcExists {
 		fmt.Println("  1. Reload shell:     source ~/.bashrc")
@@ -138,7 +141,9 @@ func setupCreateDir(dir string) {
 }
 
 // setupWriteEmbedded writes an embedded file to dst, skipping if identical.
-func setupWriteEmbedded(name, dst string) {
+// If userConfig is true and the file already exists with different content,
+// the user is prompted before overwriting.
+func setupWriteEmbedded(name, dst string, userConfig bool) {
 	data, err := embeddedFS.ReadFile(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[!]  Embedded file %s not found: %v\n", name, err)
@@ -150,6 +155,18 @@ func setupWriteEmbedded(name, dst string) {
 	if err == nil && bytes.Equal(existing, data) {
 		fmt.Printf("[ok] %s is up to date\n", name)
 		return
+	}
+
+	// For user-editable config files, prompt before overwriting
+	if userConfig && err == nil {
+		fmt.Printf("[?]  %s has been modified. Overwrite with defaults? [y/N] ", name)
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Printf("[ok] Keeping existing %s\n", name)
+			return
+		}
 	}
 
 	// Atomic write: temp file + rename
@@ -338,8 +355,8 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Check for existing PATH export
-		if strings.Contains(trimmed, `export PATH="$HOME/.local/bin`) {
+		// Check for existing PATH export (exclude commented lines)
+		if !strings.HasPrefix(trimmed, "#") && strings.HasPrefix(trimmed, `export PATH="$HOME/.local/bin`) {
 			hasPathExport = true
 		}
 

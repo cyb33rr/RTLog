@@ -30,7 +30,11 @@ var clearCmd = &cobra.Command{
 			eng = st[state.KeyEngagement]
 		}
 
-		path := logfile.GetLogPath(eng)
+		path, err := logfile.GetLogPath(eng)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		name := logfile.EngagementName(path)
 		dir := filepath.Dir(path)
 

@@ -96,7 +96,7 @@ func sortAndEscapeFlags(flags []string) []string {
 // caller should use StripQuotes on the result.
 func BuildFlagRegex(flags []string) *regexp.Regexp {
 	escaped := sortAndEscapeFlags(flags)
-	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|=)(\S+)`
+	pattern := `(?:^|\s)(?:` + strings.Join(escaped, "|") + `)(?:\s+|[:=])(\S+)`
 	return regexp.MustCompile(pattern)
 }
 

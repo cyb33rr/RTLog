@@ -16,7 +16,9 @@ type Selector struct {
 	cursor    int
 	offset    int
 	expanded  bool
-	lastLines int // number of \r\n written on last render
+	reversed  bool // true = newest first (default)
+	outScroll int  // scroll offset within expanded output
+	lastLines int  // number of \r\n written on last render
 }
 
 // NewSelector creates a Selector for the given entries.
@@ -25,6 +27,7 @@ func NewSelector(entries []Entry, header string, idxWidth int) *Selector {
 		entries:  entries,
 		header:   header,
 		idxWidth: idxWidth,
+		reversed: true,
 	}
 }
 
@@ -59,15 +62,31 @@ func (s *Selector) Run() error {
 				return nil
 			case 13:
 				s.expanded = !s.expanded
+				s.outScroll = 0
+			case 'r':
+				for i, j := 0, len(s.entries)-1; i < j; i, j = i+1, j-1 {
+					s.entries[i], s.entries[j] = s.entries[j], s.entries[i]
+				}
+				s.reversed = !s.reversed
+				s.cursor = 0
+				s.offset = 0
+				s.outScroll = 0
+				s.expanded = false
 			}
 		} else if n == 3 && buf[0] == 27 && buf[1] == '[' {
 			switch buf[2] {
 			case 'A':
-				s.expanded = false
-				s.moveUp()
+				if s.expanded {
+					s.scrollOutUp()
+				} else {
+					s.moveUp()
+				}
 			case 'B':
-				s.expanded = false
-				s.moveDown()
+				if s.expanded {
+					s.scrollOutDown()
+				} else {
+					s.moveDown()
+				}
 			}
 		}
 	}
@@ -76,13 +95,33 @@ func (s *Selector) Run() error {
 func (s *Selector) moveDown() {
 	if s.cursor < len(s.entries)-1 {
 		s.cursor++
+		s.outScroll = 0
 	}
 }
 
 func (s *Selector) moveUp() {
 	if s.cursor > 0 {
 		s.cursor--
+		s.outScroll = 0
 	}
+}
+
+func (s *Selector) scrollOutDown() {
+	s.outScroll++
+}
+
+func (s *Selector) scrollOutUp() {
+	if s.outScroll > 0 {
+		s.outScroll--
+	}
+}
+
+// origIdx returns the original 1-based entry number for position i.
+func (s *Selector) origIdx(i int) int {
+	if s.reversed {
+		return len(s.entries) - i
+	}
+	return i + 1
 }
 
 func (s *Selector) clearPrev() {
@@ -102,10 +141,33 @@ func truncateVisible(s string, width int) string {
 	var b strings.Builder
 	vis := 0
 	inEsc := false
+	inOSC := false
+	prevEsc := false // tracks if previous rune was \033, used to detect ST (\x1b\)
+	truncated := false
 	for _, r := range s {
+		if inOSC {
+			b.WriteRune(r)
+			if prevEsc && r == '\\' {
+				// ST terminator: \x1b\ ends the OSC
+				inOSC = false
+				prevEsc = false
+			} else if r == '\x07' {
+				// BEL terminator ends the OSC
+				inOSC = false
+				prevEsc = false
+			} else {
+				prevEsc = r == '\033'
+			}
+			continue
+		}
 		if inEsc {
 			b.WriteRune(r)
-			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+			if r == ']' {
+				// Switch to OSC mode
+				inEsc = false
+				inOSC = true
+				prevEsc = false
+			} else if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
 				inEsc = false
 			}
 			continue
@@ -116,10 +178,15 @@ func truncateVisible(s string, width int) string {
 			continue
 		}
 		if vis >= width {
+			truncated = true
 			break
 		}
 		b.WriteRune(r)
 		vis++
+	}
+	// If truncated mid-string, close any unclosed ANSI sequences
+	if truncated {
+		b.WriteString(Reset)
 	}
 	return b.String()
 }
@@ -147,8 +214,15 @@ func (s *Selector) render() {
 	writeln("")
 
 	var outLines []string
+	var wrapExtra int
 	if s.expanded {
 		outLines = s.getOutputLines(h)
+		// Calculate extra lines from wrapping the selected entry
+		curLine := RE_ANSI.ReplaceAllString(FmtEntry(s.entries[s.cursor], s.origIdx(s.cursor), s.idxWidth), "")
+		nRunes := len([]rune(curLine))
+		if nRunes > w {
+			wrapExtra = (nRunes - 1) / w
+		}
 	}
 
 	visibleLines := h - 4
@@ -156,7 +230,10 @@ func (s *Selector) render() {
 		visibleLines = 1
 	}
 
-	entrySlots := visibleLines - len(outLines)
+	entrySlots := visibleLines - len(outLines) - wrapExtra
+	if entrySlots > 10 {
+		entrySlots = 10
+	}
 	if entrySlots < 1 {
 		entrySlots = 1
 	}
@@ -174,10 +251,22 @@ func (s *Selector) render() {
 	}
 
 	for i := s.offset; i < end; i++ {
-		line := FmtEntry(s.entries[i], i+1, s.idxWidth)
+		line := FmtEntry(s.entries[i], s.origIdx(i), s.idxWidth)
 		if i == s.cursor {
 			plain := RE_ANSI.ReplaceAllString(line, "")
-			writeln("\033[7m" + plain + "\033[0m")
+			if s.expanded {
+				// Wrap full text across multiple lines
+				runes := []rune(plain)
+				for off := 0; off < len(runes); off += w {
+					wEnd := off + w
+					if wEnd > len(runes) {
+						wEnd = len(runes)
+					}
+					writeln("\033[7m" + string(runes[off:wEnd]) + "\033[0m")
+				}
+			} else {
+				writeln("\033[7m" + plain + "\033[0m")
+			}
 			for _, ol := range outLines {
 				writeln(ol)
 			}
@@ -192,7 +281,15 @@ func (s *Selector) render() {
 	if s.expanded {
 		enterHint = "hide output"
 	}
-	footer := fmt.Sprintf(" %d/%d  [↑/↓] navigate  [Enter] %s  [q] quit", s.cursor+1, len(s.entries), enterHint)
+	curPos := s.origIdx(s.cursor)
+	if len(s.entries) == 0 {
+		curPos = 0
+	}
+	orderHint := "oldest first"
+	if s.reversed {
+		orderHint = "newest first"
+	}
+	footer := fmt.Sprintf(" %d/%d  [↑/↓] navigate  [Enter] %s  [r] reverse (%s)  [q] quit", curPos, len(s.entries), enterHint, orderHint)
 	b.WriteString(truncateVisible(Colorize(footer, Dim), w))
 	// Don't add \r\n for the last line — lines count is for how many to move UP
 
@@ -217,13 +314,21 @@ func (s *Selector) getOutputLines(termHeight int) []string {
 		maxLines = 1
 	}
 
+	// Clamp scroll offset
+	total := len(raw)
+	s.outScroll = max(0, min(s.outScroll, total-maxLines))
+	end := min(s.outScroll+maxLines, total)
+
 	var lines []string
-	for i, l := range raw {
-		if i >= maxLines {
-			lines = append(lines, Colorize("    ... (truncated)", Dim))
-			break
-		}
-		lines = append(lines, "    "+l)
+	for i := s.outScroll; i < end; i++ {
+		lines = append(lines, "    "+raw[i])
 	}
+
+	// Scroll indicator
+	if total > maxLines {
+		indicator := fmt.Sprintf("    ── line %d-%d of %d (↑/↓ scroll, Enter close) ──", s.outScroll+1, end, total)
+		lines = append(lines, Colorize(indicator, Dim))
+	}
+
 	return lines
 }

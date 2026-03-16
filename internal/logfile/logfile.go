@@ -57,6 +57,7 @@ func ValidateEngagementName(name string) error {
 func LogDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot determine home directory: %v\n", err)
 		return filepath.Join(".", ".rt", "logs")
 	}
 	return filepath.Join(home, ".rt", "logs")
@@ -98,37 +99,36 @@ func AvailableEngagements() []string {
 
 // GetLogPath resolves an engagement name to its .db file path.
 // If engagement is empty, returns the most recently modified file.
-// Prints diagnostics on failure and calls os.Exit(1).
-func GetLogPath(engagement string) string {
+// Returns an error with diagnostic information on failure.
+func GetLogPath(engagement string) (string, error) {
 	dir := LogDir()
 
 	if engagement != "" {
 		// Try direct path first (O(1) instead of listing all files)
 		candidate := filepath.Join(dir, engagement+".db")
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+			return candidate, nil
 		}
 
 		// Not found - list available for error message
 		files := AvailableEngagements()
-		fmt.Fprintf(os.Stderr, "Engagement '%s' not found.\n", engagement)
+		msg := fmt.Sprintf("engagement '%s' not found", engagement)
 		if len(files) > 0 {
-			fmt.Fprintln(os.Stderr, "Available engagements:")
-			for _, f := range files {
-				fmt.Fprintf(os.Stderr, "  %s\n", EngagementName(f))
+			names := make([]string, len(files))
+			for i, f := range files {
+				names[i] = EngagementName(f)
 			}
+			msg += fmt.Sprintf("; available engagements: %s", strings.Join(names, ", "))
 		}
-		os.Exit(1)
+		return "", fmt.Errorf("%s", msg)
 	}
 
 	files := AvailableEngagements()
 	if len(files) == 0 {
-		fmt.Fprintf(os.Stderr, "No log databases found in %s\n", dir)
-		fmt.Fprintln(os.Stderr, "Create one with: rtlog new <name>")
-		os.Exit(1)
+		return "", fmt.Errorf("no log databases found in %s\nCreate one with: rtlog new <name>", dir)
 	}
 
-	return files[0]
+	return files[0], nil
 }
 
 // EngagementName extracts the stem name from a .db path.

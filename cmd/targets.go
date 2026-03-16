@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/cyb33rr/rtlog/internal/display"
@@ -37,18 +38,22 @@ func newTargetCreds() *targetCreds {
 }
 
 func runTargets(cmd *cobra.Command, args []string) {
-	path := logfile.GetLogPath(engagementFlag)
+	path, err := logfile.GetLogPath(engagementFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
 
 	d, err := openEngagementDB()
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 	defer d.Close()
 
 	entries, err := d.LoadAll()
 	if err != nil {
-		fmt.Printf("Error loading entries: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
 		return
 	}
 

@@ -54,9 +54,9 @@ func init() {
 
 // openEngagementDB opens the SQLite database for the current engagement.
 func openEngagementDB() (*db.DB, error) {
-	logPath := logfile.GetLogPath(engagementFlag)
-	if logPath == "" {
-		return nil, fmt.Errorf("no active engagement (use 'rtlog new' or 'rtlog switch')")
+	logPath, err := logfile.GetLogPath(engagementFlag)
+	if err != nil {
+		return nil, err
 	}
 	dir := filepath.Dir(logPath)
 	eng := logfile.EngagementName(logPath)

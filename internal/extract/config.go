@@ -3,6 +3,7 @@ package extract
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -128,7 +129,12 @@ func LoadConfigBytes(data []byte) error {
 						flag := strings.TrimSpace(parts[0])
 						role := strings.TrimSpace(parts[1])
 						if flag != "" && role != "" {
-							cfg.CredFlags[flag] = role
+							switch role {
+							case "user", "pass", "hash":
+								cfg.CredFlags[flag] = role
+							default:
+								fmt.Fprintf(os.Stderr, "extract config: unknown cred role %q for flag %q in tool %q (want user/pass/hash), skipping\n", role, flag, toolName)
+							}
 						}
 					}
 				}

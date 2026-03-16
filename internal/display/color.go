@@ -23,7 +23,7 @@ const (
 var IsTTY = term.IsTerminal(int(os.Stdout.Fd()))
 
 // RE_ANSI matches ANSI escape sequences for stripping.
-var RE_ANSI = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x07|\r`)
+var RE_ANSI = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?(?:\x07|\x1b\\)|\r`)
 
 // Colorize wraps text with an ANSI color code if stdout is a TTY.
 func Colorize(text, code string) string {
