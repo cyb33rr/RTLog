@@ -12,14 +12,14 @@ import (
 var exportOutput string
 
 var exportCmd = &cobra.Command{
-	Use:   "export <md|csv>",
-	Short: "Export entries as Markdown or CSV",
-	Long:  "Export log entries to a Markdown table or CSV file.",
+	Use:   "export <md|csv|jsonl>",
+	Short: "Export entries as Markdown, CSV, or JSONL",
+	Long:  "Export log entries to a Markdown table, CSV, or JSONL file.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		format := args[0]
-		if format != "md" && format != "csv" {
-			fmt.Fprintf(os.Stderr, "Unknown export format: %s (use md or csv)\n", format)
+		if format != "md" && format != "csv" && format != "jsonl" {
+			fmt.Fprintf(os.Stderr, "Unknown export format: %s (use md, csv, or jsonl)\n", format)
 			os.Exit(1)
 		}
 
@@ -53,6 +53,8 @@ var exportCmd = &cobra.Command{
 			text = export.ExportMarkdown(entries)
 		case "csv":
 			text = export.ExportCSV(entries)
+		case "jsonl":
+			text = export.ExportJSONL(entries)
 		}
 
 		outPath := exportOutput
