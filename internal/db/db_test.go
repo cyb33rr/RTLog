@@ -417,6 +417,81 @@ func TestDeleteNonexistent(t *testing.T) {
 	}
 }
 
+func TestUpdate(t *testing.T) {
+	d := openTestDB(t)
+	insertN(t, d, 1)
+
+	// Update tag
+	if err := d.Update(1, map[string]string{"tag": "privesc"}); err != nil {
+		t.Fatalf("Update tag: %v", err)
+	}
+	e, _ := d.GetByID(1)
+	if e.Tag != "privesc" {
+		t.Errorf("Tag = %q, want %q", e.Tag, "privesc")
+	}
+
+	// Update note
+	if err := d.Update(1, map[string]string{"note": "escalated via potato"}); err != nil {
+		t.Fatalf("Update note: %v", err)
+	}
+	e, _ = d.GetByID(1)
+	if e.Note != "escalated via potato" {
+		t.Errorf("Note = %q, want %q", e.Note, "escalated via potato")
+	}
+
+	// Update both
+	if err := d.Update(1, map[string]string{"tag": "exfil", "note": "done"}); err != nil {
+		t.Fatalf("Update both: %v", err)
+	}
+	e, _ = d.GetByID(1)
+	if e.Tag != "exfil" || e.Note != "done" {
+		t.Errorf("got tag=%q note=%q, want tag=%q note=%q", e.Tag, e.Note, "exfil", "done")
+	}
+}
+
+func TestUpdateClearField(t *testing.T) {
+	d := openTestDB(t)
+
+	e := sampleEntry(0)
+	e.Tag = "recon"
+	e.Note = "initial"
+	d.Insert(e)
+
+	// Clear tag with empty string
+	if err := d.Update(1, map[string]string{"tag": ""}); err != nil {
+		t.Fatalf("Update clear tag: %v", err)
+	}
+	got, _ := d.GetByID(1)
+	if got.Tag != "" {
+		t.Errorf("Tag = %q after clear, want empty", got.Tag)
+	}
+	// Note should be unchanged
+	if got.Note != "initial" {
+		t.Errorf("Note = %q, want %q (unchanged)", got.Note, "initial")
+	}
+}
+
+func TestUpdateInvalidColumn(t *testing.T) {
+	d := openTestDB(t)
+	insertN(t, d, 1)
+
+	// Attempting to update an immutable field should error
+	err := d.Update(1, map[string]string{"cmd": "malicious"})
+	if err == nil {
+		t.Error("expected error when updating immutable field 'cmd'")
+	}
+}
+
+func TestUpdateNonexistentID(t *testing.T) {
+	d := openTestDB(t)
+
+	// Update on nonexistent entry should not error (no rows affected is fine)
+	err := d.Update(999, map[string]string{"tag": "test"})
+	if err != nil {
+		t.Fatalf("Update nonexistent: %v", err)
+	}
+}
+
 func TestReopenExistingDB(t *testing.T) {
 	dir := t.TempDir()
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cyb33rr/rtlog/internal/logfile"
 
@@ -204,6 +205,38 @@ func (d *DB) Delete(id int64) error {
 	_, err := d.db.Exec("DELETE FROM entries WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete entry: %w", err)
+	}
+	return nil
+}
+
+// allowedUpdateColumns is the whitelist of columns that can be modified via Update.
+var allowedUpdateColumns = map[string]bool{
+	"tag":  true,
+	"note": true,
+}
+
+// Update modifies allowed fields on a single entry by ID.
+// Only "tag" and "note" columns are permitted; other column names return an error.
+func (d *DB) Update(id int64, fields map[string]string) error {
+	if len(fields) == 0 {
+		return fmt.Errorf("no fields to update")
+	}
+
+	var setClauses []string
+	var args []interface{}
+	for col, val := range fields {
+		if !allowedUpdateColumns[col] {
+			return fmt.Errorf("column %q is not editable", col)
+		}
+		setClauses = append(setClauses, col+" = ?")
+		args = append(args, val)
+	}
+	args = append(args, id)
+
+	query := "UPDATE entries SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
+	_, err := d.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("update entry: %w", err)
 	}
 	return nil
 }
