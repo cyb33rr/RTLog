@@ -20,10 +20,49 @@ const (
 
 // Suppress unused import warnings - these are used in later tasks
 var (
-	_ = json.NewDecoder
 	_ = io.Copy
-	_ = http.Get
 )
+
+type Release struct {
+	TagName string  `json:"tag_name"`
+	Assets  []Asset `json:"assets"`
+}
+
+type Asset struct {
+	Name        string `json:"name"`
+	DownloadURL string `json:"browser_download_url"`
+}
+
+func FetchLatestRelease(url string) (*Release, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetching release: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+	var rel Release
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, fmt.Errorf("parsing release JSON: %w", err)
+	}
+	return &rel, nil
+}
+
+func FindAssetURL(assets []Asset, goos, goarch string) (string, error) {
+	target := AssetPrefix + goos + "-" + goarch
+	for _, a := range assets {
+		if a.Name == target {
+			return a.DownloadURL, nil
+		}
+	}
+	var names []string
+	for _, a := range assets {
+		names = append(names, a.Name)
+	}
+	return "", fmt.Errorf("no asset found for %s-%s; available: %s", goos, goarch, strings.Join(names, ", "))
+}
 
 func rtDir() string {
 	home, err := os.UserHomeDir()
