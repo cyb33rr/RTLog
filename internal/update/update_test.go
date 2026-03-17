@@ -60,11 +60,53 @@ func TestIsDevVersion(t *testing.T) {
 	}
 }
 
+func TestShouldCheck_NoFile(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	if !ShouldCheck() {
+		t.Error("expected ShouldCheck to return true when no last-update-check file exists")
+	}
+}
+
+func TestShouldCheck_RecentCheck(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	WriteLastCheck()
+	if ShouldCheck() {
+		t.Error("expected ShouldCheck to return false after recent check")
+	}
+}
+
+func TestShouldCheck_OldCheck(t *testing.T) {
+	home, cleanup := setupTestHome(t)
+	defer cleanup()
+	old := time.Now().Add(-25 * time.Hour).Unix()
+	path := filepath.Join(home, ".rt", "last-update-check")
+	os.WriteFile(path, []byte(strconv.FormatInt(old, 10)), 0644)
+	if !ShouldCheck() {
+		t.Error("expected ShouldCheck to return true for 25-hour-old check")
+	}
+}
+
+func TestUpdateAvailable_ReadWrite(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	if v := ReadUpdateAvailable(); v != "" {
+		t.Errorf("expected empty, got %q", v)
+	}
+	WriteUpdateAvailable("v1.2.0")
+	if v := ReadUpdateAvailable(); v != "v1.2.0" {
+		t.Errorf("expected v1.2.0, got %q", v)
+	}
+	ClearUpdateAvailable()
+	if v := ReadUpdateAvailable(); v != "" {
+		t.Errorf("expected empty after clear, got %q", v)
+	}
+}
+
 // Suppress unused import warnings - these are used in later tasks
 var (
 	_ = fmt.Sprintf
 	_ = http.StatusOK
 	_ = httptest.NewServer
-	_ = strconv.Atoi
-	_ = time.Now
 )

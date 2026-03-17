@@ -21,15 +21,56 @@ const (
 // Suppress unused import warnings - these are used in later tasks
 var (
 	_ = json.NewDecoder
-	_ = fmt.Sprintf
 	_ = io.Copy
 	_ = http.Get
-	_ = os.Open
-	_ = filepath.Join
-	_ = strconv.Atoi
-	_ = strings.TrimSpace
-	_ = time.Now
 )
+
+func rtDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".rt")
+	}
+	dir := filepath.Join(home, ".rt")
+	os.MkdirAll(dir, 0700)
+	return dir
+}
+
+func ShouldCheck() bool {
+	path := filepath.Join(rtDir(), "last-update-check")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	ts, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return true
+	}
+	return time.Since(time.Unix(ts, 0)) > 24*time.Hour
+}
+
+func WriteLastCheck() {
+	path := filepath.Join(rtDir(), "last-update-check")
+	os.WriteFile(path, []byte(fmt.Sprintf("%d", time.Now().Unix())), 0644)
+}
+
+func ReadUpdateAvailable() string {
+	path := filepath.Join(rtDir(), "update-available")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func WriteUpdateAvailable(version string) {
+	path := filepath.Join(rtDir(), "update-available")
+	os.WriteFile(path, []byte(version), 0644)
+}
+
+func ClearUpdateAvailable() {
+	path := filepath.Join(rtDir(), "update-available")
+	os.Remove(path)
+}
 
 func CompareVersions(current, latest string) int {
 	parse := func(v string) []int {
