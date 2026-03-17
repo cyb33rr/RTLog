@@ -138,3 +138,16 @@ func CompareVersions(current, latest string) int {
 func IsDevVersion(version string) bool {
 	return version == "dev"
 }
+
+func IsGoInstalled(binPath, gopath, gobin string) bool {
+	if gobin != "" && filepath.Dir(binPath) == gobin {
+		return true
+	}
+	if gopath != "" {
+		gopathBin := filepath.Join(gopath, "bin")
+		if filepath.Dir(binPath) == gopathBin {
+			return true
+		}
+	}
+	return false
+}

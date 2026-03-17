@@ -158,3 +158,27 @@ func TestFetchLatestRelease_Timeout(t *testing.T) {
 		t.Error("expected timeout error")
 	}
 }
+
+func TestIsGoInstalled(t *testing.T) {
+	tests := []struct {
+		name     string
+		binPath  string
+		gopath   string
+		gobin    string
+		expected bool
+	}{
+		{"gopath bin", "/home/user/go/bin/rtlog", "/home/user/go", "", true},
+		{"gobin", "/custom/bin/rtlog", "", "/custom/bin", true},
+		{"rt dir", "/home/user/.rt/rtlog", "/home/user/go", "", false},
+		{"usr local", "/usr/local/bin/rtlog", "/home/user/go", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsGoInstalled(tt.binPath, tt.gopath, tt.gobin)
+			if got != tt.expected {
+				t.Errorf("IsGoInstalled(%q, %q, %q) = %v, want %v",
+					tt.binPath, tt.gopath, tt.gobin, got, tt.expected)
+			}
+		})
+	}
+}
