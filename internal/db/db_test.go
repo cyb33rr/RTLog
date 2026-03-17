@@ -333,6 +333,90 @@ func TestClear(t *testing.T) {
 	}
 }
 
+func TestGetByID(t *testing.T) {
+	d := openTestDB(t)
+	insertN(t, d, 3)
+
+	// Get existing entry
+	entry, err := d.GetByID(2)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("GetByID returned nil for existing entry")
+	}
+	if entry.ID != 2 {
+		t.Errorf("ID = %d, want 2", entry.ID)
+	}
+
+	// Get nonexistent entry
+	entry, err = d.GetByID(999)
+	if err != nil {
+		t.Fatalf("GetByID for missing: %v", err)
+	}
+	if entry != nil {
+		t.Errorf("expected nil for nonexistent ID, got %+v", entry)
+	}
+}
+
+func TestDelete(t *testing.T) {
+	d := openTestDB(t)
+	insertN(t, d, 3)
+
+	// Delete entry 2
+	if err := d.Delete(2); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Count should be 2
+	count, err := d.Count()
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Count after delete = %d, want 2", count)
+	}
+
+	// Entry 2 should be gone
+	entry, err := d.GetByID(2)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if entry != nil {
+		t.Error("entry 2 still exists after delete")
+	}
+
+	// Entries 1 and 3 should still exist
+	for _, id := range []int64{1, 3} {
+		e, err := d.GetByID(id)
+		if err != nil {
+			t.Fatalf("GetByID(%d): %v", id, err)
+		}
+		if e == nil {
+			t.Errorf("entry %d missing after deleting entry 2", id)
+		}
+	}
+}
+
+func TestDeleteNonexistent(t *testing.T) {
+	d := openTestDB(t)
+	insertN(t, d, 1)
+
+	// Deleting nonexistent ID should not error
+	if err := d.Delete(999); err != nil {
+		t.Fatalf("Delete nonexistent: %v", err)
+	}
+
+	// Count unchanged
+	count, err := d.Count()
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Count = %d, want 1", count)
+	}
+}
+
 func TestReopenExistingDB(t *testing.T) {
 	dir := t.TempDir()
 

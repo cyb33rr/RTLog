@@ -183,6 +183,31 @@ func (d *DB) Clear() error {
 	return nil
 }
 
+// GetByID returns a single entry by ID, or nil if not found.
+func (d *DB) GetByID(id int64) (*logfile.LogEntry, error) {
+	row := d.db.QueryRow(
+		"SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out FROM entries WHERE id = ?", id)
+	var e logfile.LogEntry
+	err := row.Scan(&e.ID, &e.Ts, &e.Epoch, &e.User, &e.Host, &e.TTY,
+		&e.Cwd, &e.Tool, &e.Cmd, &e.Exit, &e.Dur, &e.Tag, &e.Note, &e.Out)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get entry by id: %w", err)
+	}
+	return &e, nil
+}
+
+// Delete removes a single entry by ID.
+func (d *DB) Delete(id int64) error {
+	_, err := d.db.Exec("DELETE FROM entries WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete entry: %w", err)
+	}
+	return nil
+}
+
 // Close closes the database connection.
 func (d *DB) Close() error {
 	return d.db.Close()
