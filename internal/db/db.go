@@ -145,23 +145,6 @@ func (d *DB) Search(keyword string) ([]logfile.LogEntry, error) {
 	)
 }
 
-// Tail returns the last n entries in chronological (ascending) order.
-func (d *DB) Tail(n int) ([]logfile.LogEntry, error) {
-	return d.queryEntries(
-		`SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out
-		 FROM (SELECT * FROM entries ORDER BY id DESC LIMIT ?)
-		 ORDER BY id ASC`, n,
-	)
-}
-
-// TailAfter returns entries with id > afterID in ascending order.
-func (d *DB) TailAfter(afterID int64) ([]logfile.LogEntry, error) {
-	return d.queryEntries(
-		"SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out FROM entries WHERE id > ? ORDER BY id ASC",
-		afterID,
-	)
-}
-
 // Count returns the total number of entries.
 func (d *DB) Count() (int, error) {
 	var count int

@@ -29,6 +29,7 @@ If no engagement is specified with -e, the most recently modified database is us
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&engagementFlag, "engagement", "e", "", "engagement name (defaults to most recent)")
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()

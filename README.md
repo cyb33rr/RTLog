@@ -55,7 +55,6 @@ gobuster dir -u http://10.10.10.5 -w /usr/share/wordlists/common.txt
 
 # View your log
 rtlog show
-rtlog tail
 
 # Extract all targets found across commands
 rtlog targets
@@ -72,7 +71,7 @@ rtlog export md
 rtlog new <name>         # Create and switch to a new engagement
 rtlog switch <name>      # Switch to an existing engagement
 rtlog list               # List all engagements (* = active)
-rtlog status             # Show current state (engagement, tag, logging, capture)
+rtlog status             # Show state overview and engagement statistics
 ```
 
 ### Tagging & Notes
@@ -90,9 +89,8 @@ rtlog note <text>        # Attach a one-shot note to the next command
 ```bash
 rtlog on                 # Enable logging
 rtlog off                # Disable logging
-rtlog capture on         # Enable stdout/stderr capture
-rtlog capture off        # Disable capture (metadata only)
-rtlog capture            # Show current capture state
+rtlog on --output        # Enable stdout/stderr capture
+rtlog off --output       # Disable capture (metadata only)
 ```
 
 ### Viewing Logs
@@ -103,8 +101,6 @@ rtlog show --today       # Today's entries only
 rtlog show --date 2026-01-15
 rtlog show -a            # Print all entries with output (non-interactive)
 rtlog show -e <name>     # Show a different engagement
-rtlog tail               # Last 20 entries, then follow live
-rtlog tail -n 50         # Customize tail count
 rtlog search <keyword>   # Case-insensitive search with highlighting
 ```
 
@@ -112,7 +108,6 @@ rtlog search <keyword>   # Case-insensitive search with highlighting
 
 ```bash
 rtlog timeline           # Entries grouped by date and tag
-rtlog stats              # Totals, success rate, top tools breakdown
 rtlog targets            # Extract IPs, hostnames, ports, credentials
 ```
 
@@ -125,29 +120,6 @@ rtlog export md -o report.md
 
 rtlog import old.jsonl   # Import legacy JSONL log files into SQLite
 ```
-
-### Programmatic Logging
-
-The `rtlog log` command is used by shell hooks and scripts to write entries directly:
-
-```bash
-rtlog log --cmd "nmap -sV 10.10.10.5" --exit 0 --dur 12.3
-rtlog log --cmd "gobuster dir -u http://target" --out "$(cat /tmp/output)"
-rtlog log --cmd "ffuf -u http://target/FUZZ" --out-file /tmp/ffuf.out --tty /dev/pts/0
-```
-
-| Flag | Description |
-|---|---|
-| `--cmd` | Full command line (required) |
-| `--exit` | Command exit code |
-| `--dur` | Duration in seconds |
-| `--out` | Captured stdout/stderr |
-| `--out-file` | Read output from file instead of `--out` |
-| `--tool` | Tool name (auto-extracted from `--cmd` if omitted) |
-| `--cwd` | Working directory (defaults to current) |
-| `--tag` | Override tag (defaults to state file) |
-| `--note` | Override note (defaults to state file) |
-| `--tty` | TTY device (default: auto-detect) |
 
 ### Cleanup
 

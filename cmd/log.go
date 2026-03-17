@@ -28,8 +28,9 @@ var (
 )
 
 var logCmd = &cobra.Command{
-	Use:   "log",
-	Short: "Programmatically log a command entry",
+	Use:    "log",
+	Hidden: true,
+	Short:  "Programmatically log a command entry",
 	Long: `Log a command entry directly to the active engagement's SQLite database.
 
 Intended for integration with non-interactive callers (Claude Code hooks,

@@ -253,56 +253,6 @@ func TestSearchUser(t *testing.T) {
 	}
 }
 
-func TestTail(t *testing.T) {
-	d := openTestDB(t)
-	insertN(t, d, 10)
-
-	entries, err := d.Tail(3)
-	if err != nil {
-		t.Fatalf("Tail: %v", err)
-	}
-	if len(entries) != 3 {
-		t.Fatalf("got %d entries, want 3", len(entries))
-	}
-
-	// Verify chronological order (ascending IDs).
-	if entries[0].ID >= entries[1].ID || entries[1].ID >= entries[2].ID {
-		t.Errorf("entries not in ascending order: IDs %d, %d, %d",
-			entries[0].ID, entries[1].ID, entries[2].ID)
-	}
-
-	// Verify these are the LAST 3 entries (IDs 8, 9, 10).
-	if entries[0].ID != 8 || entries[1].ID != 9 || entries[2].ID != 10 {
-		t.Errorf("expected IDs 8,9,10, got %d,%d,%d",
-			entries[0].ID, entries[1].ID, entries[2].ID)
-	}
-}
-
-func TestTailAfter(t *testing.T) {
-	d := openTestDB(t)
-	insertN(t, d, 5)
-
-	// Load all to get the 3rd entry's ID.
-	all, err := d.LoadAll()
-	if err != nil {
-		t.Fatalf("LoadAll: %v", err)
-	}
-	thirdID := all[2].ID
-
-	entries, err := d.TailAfter(thirdID)
-	if err != nil {
-		t.Fatalf("TailAfter: %v", err)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("got %d entries, want 2", len(entries))
-	}
-	for _, e := range entries {
-		if e.ID <= thirdID {
-			t.Errorf("entry ID %d should be > %d", e.ID, thirdID)
-		}
-	}
-}
-
 func TestCount(t *testing.T) {
 	d := openTestDB(t)
 	insertN(t, d, 7)
