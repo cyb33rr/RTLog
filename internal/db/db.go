@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/cyb33rr/rtlog/internal/logfile"
@@ -222,14 +223,21 @@ func (d *DB) Update(id int64, fields map[string]string) error {
 		return fmt.Errorf("no fields to update")
 	}
 
-	var setClauses []string
-	var args []interface{}
-	for col, val := range fields {
+	// Validate all columns first.
+	cols := make([]string, 0, len(fields))
+	for col := range fields {
 		if !allowedUpdateColumns[col] {
 			return fmt.Errorf("column %q is not editable", col)
 		}
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+
+	var setClauses []string
+	var args []interface{}
+	for _, col := range cols {
 		setClauses = append(setClauses, col+" = ?")
-		args = append(args, val)
+		args = append(args, fields[col])
 	}
 	args = append(args, id)
 
