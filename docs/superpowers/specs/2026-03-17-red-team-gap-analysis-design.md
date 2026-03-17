@@ -27,6 +27,8 @@ adidnsdump
 - `plink` — under Remote Access / File Transfer
 - `ldapdomaindump`, `ldeep`, `windapsearch`, `adidnsdump` — under Active Directory
 
+**extract.conf:** No changes needed — these 7 tools already have correct extraction rules in `extract.conf`. This change only adds the missing `tools.conf` entries so those rules actually fire.
+
 ### 2. Add missing target-interactive tools to tools.conf
 
 **Problem:** Several common red team tools that interact with the target environment are not tracked.
@@ -65,7 +67,9 @@ dig            # general DNS utility, too noisy for routine use
 socat          # general-purpose utility, not specifically a red team tool
 ```
 
-**Note:** `dig` and `socat` removal is opinionated. If DNS recon or port forwarding logging is desired for a specific engagement, the user can re-add them to their local `~/.rt/tools.conf`. The embedded defaults should track tools that are unambiguously operational.
+**Also remove from `extract.conf`:** The corresponding entries for these tools (`searchsploit`, `dig positional`, `socat`) must be removed to avoid orphaned config. This is the same class of mismatch that Section 1 fixes — keeping dead extraction rules is confusing.
+
+**Note:** `dig` and `socat` removal is opinionated. If DNS recon or port forwarding logging is desired for a specific engagement, the user can re-add them to their local `~/.rt/tools.conf` and `~/.rt/extract.conf`. The embedded defaults should track tools that are unambiguously operational.
 
 ### 4. Add JSONL export
 
@@ -88,6 +92,7 @@ Follows the same pattern as existing `md` and `csv` exports.
 
 **Implementation:**
 - New function in `internal/export/jsonl.go`: `ExportJSONL(entries []logfile.LogEntry) string`
+- **ID field handling:** `LogEntry.ID` has the struct tag `json:"-"`, which causes `encoding/json.Marshal` to skip it. The export function must use a local struct or `map[string]interface{}` that explicitly includes the `id` field. Do NOT change the `json:"-"` tag on the main struct — it serves a purpose in the import/log pipeline where IDs should not appear.
 - Uses `encoding/json` to marshal each entry — no external dependencies
 - Update `cmd/export.go` to accept `jsonl` as a valid format alongside `md` and `csv`
 - Default output filename: `<engagement>.jsonl`
@@ -100,11 +105,12 @@ Follows the same pattern as existing `md` and `csv` exports.
 
 **CLI interface:**
 ```
-rtlog delete <id> [-y]
+rtlog delete <id> [--yes/-y]
 ```
 
 - Deletes the entry with the given ID
-- Shows the entry before deletion and asks for confirmation (unless `-y` flag)
+- Shows the entry before deletion and asks for confirmation (unless `--yes`/`-y` flag, matching the existing `clear` command convention)
+- If the ID does not exist, prints `"error: entry <id> not found"` and exits with code 1
 - Prints confirmation message after deletion
 
 **Implementation:**
@@ -122,7 +128,9 @@ rtlog edit <id> [--note TEXT] [--tag TEXT]
 
 - Only `note` and `tag` are editable — the command, timestamp, exit code, duration, and other operational fields are immutable record
 - Shows the entry after editing
-- At least one of `--note` or `--tag` must be provided
+- At least one of `--note` or `--tag` must be provided; if neither is given, prints usage hint and exits with code 1
+- If the ID does not exist, prints `"error: entry <id> not found"` and exits with code 1
+- Empty string values are accepted (e.g., `--tag ""`) to clear a field — this is the mechanism for removing a tag or note from a historical entry
 
 **Implementation:**
 - New file `cmd/edit.go`
