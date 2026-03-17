@@ -210,3 +210,17 @@ func ReplaceBinary(srcPath, destPath string) error {
 	}
 	return nil
 }
+
+func BackgroundCheck(currentVersion, apiURL string) {
+	rel, err := FetchLatestRelease(apiURL)
+	if err != nil {
+		return
+	}
+	cmp := CompareVersions(currentVersion, rel.TagName)
+	if cmp < 0 {
+		WriteUpdateAvailable(rel.TagName)
+	} else {
+		ClearUpdateAvailable()
+	}
+	WriteLastCheck()
+}

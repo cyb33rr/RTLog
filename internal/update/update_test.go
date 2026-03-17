@@ -258,3 +258,67 @@ func TestVerifyBinary_Empty(t *testing.T) {
 		t.Error("expected error for empty file")
 	}
 }
+
+func TestBackgroundCheck_NewVersionAvailable(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"tag_name": "v2.0.0", "assets": []}`)
+	}))
+	defer server.Close()
+	BackgroundCheck("v1.0.0", server.URL)
+	if v := ReadUpdateAvailable(); v != "v2.0.0" {
+		t.Errorf("expected update-available to be v2.0.0, got %q", v)
+	}
+	if ShouldCheck() {
+		t.Error("expected ShouldCheck to return false after background check")
+	}
+}
+
+func TestBackgroundCheck_AlreadyUpToDate(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	WriteUpdateAvailable("v0.9.0")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"tag_name": "v1.0.0", "assets": []}`)
+	}))
+	defer server.Close()
+	BackgroundCheck("v1.0.0", server.URL)
+	if v := ReadUpdateAvailable(); v != "" {
+		t.Errorf("expected update-available to be cleared, got %q", v)
+	}
+}
+
+func TestBackgroundCheck_APIError(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer server.Close()
+	BackgroundCheck("v1.0.0", server.URL)
+	if !ShouldCheck() {
+		t.Error("expected ShouldCheck to remain true after API error")
+	}
+}
+
+func TestBackgroundCheck_ThrottledByLastCheck(t *testing.T) {
+	_, cleanup := setupTestHome(t)
+	defer cleanup()
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"tag_name": "v2.0.0", "assets": []}`)
+	}))
+	defer server.Close()
+	WriteLastCheck()
+	if ShouldCheck() {
+		BackgroundCheck("v1.0.0", server.URL)
+	}
+	if called {
+		t.Error("expected API not to be called when ShouldCheck returns false")
+	}
+}
