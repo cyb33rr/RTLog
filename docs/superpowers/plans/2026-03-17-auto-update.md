@@ -112,8 +112,15 @@ Create `internal/update/update.go`:
 package update
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -247,18 +254,9 @@ Expected: compilation failure — functions not defined.
 
 - [ ] **Step 3: Implement state file I/O**
 
-Add to `internal/update/update.go`:
+Add the following functions to `internal/update/update.go` (all imports are already defined in Task 1):
 
 ```go
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
-)
-
 // rtDir returns the path to ~/.rt/, creating it if needed.
 func rtDir() string {
 	home, err := os.UserHomeDir()
@@ -406,14 +404,9 @@ Expected: compilation failure — types and functions not defined.
 
 - [ ] **Step 3: Implement GitHub API client**
 
-Add to `internal/update/update.go`:
+Add the following types and functions to `internal/update/update.go` (all imports are already defined in Task 1):
 
 ```go
-import (
-	"encoding/json"
-	"net/http"
-)
-
 // Release represents a GitHub release.
 type Release struct {
 	TagName string  `json:"tag_name"`
@@ -665,11 +658,9 @@ Expected: compilation failure.
 
 - [ ] **Step 3: Implement download, verify, and replace**
 
-Add to `internal/update/update.go`:
+Add the following functions to `internal/update/update.go` (all imports are already defined in Task 1):
 
 ```go
-import "io"
-
 // DownloadBinary downloads a file from url to destPath.
 func DownloadBinary(url, destPath string) error {
 	client := &http.Client{Timeout: 120 * time.Second}
