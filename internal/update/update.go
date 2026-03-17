@@ -13,21 +13,28 @@ import (
 )
 
 const (
-	GitHubRepo   = "cyb33rr/rtlog"
+	// GitHubRepo is the GitHub repository path for API calls.
+	GitHubRepo = "cyb33rr/rtlog"
+	// GitHubAPIURL is the base URL for checking the latest release.
 	GitHubAPIURL = "https://api.github.com/repos/" + GitHubRepo + "/releases/latest"
-	AssetPrefix  = "rtlog-"
+	// AssetPrefix is the prefix for release binary assets.
+	AssetPrefix = "rtlog-"
 )
 
+// Release represents a GitHub release.
 type Release struct {
 	TagName string  `json:"tag_name"`
 	Assets  []Asset `json:"assets"`
 }
 
+// Asset represents a release asset (binary).
 type Asset struct {
 	Name        string `json:"name"`
 	DownloadURL string `json:"browser_download_url"`
 }
 
+// FetchLatestRelease fetches the latest release from the given URL.
+// Uses a 3-second timeout.
 func FetchLatestRelease(url string) (*Release, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(url)
@@ -45,6 +52,7 @@ func FetchLatestRelease(url string) (*Release, error) {
 	return &rel, nil
 }
 
+// FindAssetURL finds the download URL for the matching OS/arch asset.
 func FindAssetURL(assets []Asset, goos, goarch string) (string, error) {
 	target := AssetPrefix + goos + "-" + goarch
 	for _, a := range assets {
@@ -69,6 +77,8 @@ func rtDir() string {
 	return dir
 }
 
+// ShouldCheck returns true if a version check should be performed
+// (no check in the last 24 hours).
 func ShouldCheck() bool {
 	path := filepath.Join(rtDir(), "last-update-check")
 	data, err := os.ReadFile(path)
@@ -82,11 +92,13 @@ func ShouldCheck() bool {
 	return time.Since(time.Unix(ts, 0)) > 24*time.Hour
 }
 
+// WriteLastCheck writes the current timestamp to last-update-check.
 func WriteLastCheck() {
 	path := filepath.Join(rtDir(), "last-update-check")
 	os.WriteFile(path, []byte(fmt.Sprintf("%d", time.Now().Unix())), 0644)
 }
 
+// ReadUpdateAvailable reads the version from update-available, or "" if none.
 func ReadUpdateAvailable() string {
 	path := filepath.Join(rtDir(), "update-available")
 	data, err := os.ReadFile(path)
@@ -96,16 +108,20 @@ func ReadUpdateAvailable() string {
 	return strings.TrimSpace(string(data))
 }
 
+// WriteUpdateAvailable writes the available version to update-available.
 func WriteUpdateAvailable(version string) {
 	path := filepath.Join(rtDir(), "update-available")
 	os.WriteFile(path, []byte(version), 0644)
 }
 
+// ClearUpdateAvailable removes the update-available file.
 func ClearUpdateAvailable() {
 	path := filepath.Join(rtDir(), "update-available")
 	os.Remove(path)
 }
 
+// CompareVersions compares two semver strings.
+// Returns -1 if current < latest, 0 if equal, 1 if current > latest.
 func CompareVersions(current, latest string) int {
 	parse := func(v string) []int {
 		v = strings.TrimPrefix(v, "v")
@@ -130,10 +146,12 @@ func CompareVersions(current, latest string) int {
 	return 0
 }
 
+// IsDevVersion returns true if the version string indicates a local dev build.
 func IsDevVersion(version string) bool {
 	return version == "dev"
 }
 
+// IsGoInstalled checks if the binary path is inside GOPATH/bin or GOBIN.
 func IsGoInstalled(binPath, gopath, gobin string) bool {
 	if gobin != "" && filepath.Dir(binPath) == gobin {
 		return true
@@ -147,6 +165,7 @@ func IsGoInstalled(binPath, gopath, gobin string) bool {
 	return false
 }
 
+// DownloadBinary downloads a file from url to destPath.
 func DownloadBinary(url, destPath string) error {
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Get(url)
@@ -168,6 +187,7 @@ func DownloadBinary(url, destPath string) error {
 	return nil
 }
 
+// VerifyBinary checks that the file at path is a valid ELF or Mach-O executable.
 func VerifyBinary(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -197,6 +217,8 @@ func VerifyBinary(path string) error {
 	return fmt.Errorf("not a valid ELF or Mach-O binary (header: %x)", header)
 }
 
+// ReplaceBinary atomically replaces the binary at destPath with srcPath.
+// Preserves the permissions of the original binary.
 func ReplaceBinary(srcPath, destPath string) error {
 	info, err := os.Stat(destPath)
 	if err != nil {
@@ -211,6 +233,8 @@ func ReplaceBinary(srcPath, destPath string) error {
 	return nil
 }
 
+// BackgroundCheck checks for a new version and writes state files.
+// Designed to be called synchronously in tests or as a goroutine in production.
 func BackgroundCheck(currentVersion, apiURL string) {
 	rel, err := FetchLatestRelease(apiURL)
 	if err != nil {
