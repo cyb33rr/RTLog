@@ -18,11 +18,6 @@ const (
 	AssetPrefix  = "rtlog-"
 )
 
-// Suppress unused import warnings - these are used in later tasks
-var (
-	_ = io.Copy
-)
-
 type Release struct {
 	TagName string  `json:"tag_name"`
 	Assets  []Asset `json:"assets"`
@@ -150,4 +145,68 @@ func IsGoInstalled(binPath, gopath, gobin string) bool {
 		}
 	}
 	return false
+}
+
+func DownloadBinary(url, destPath string) error {
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("downloading binary: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download returned %d", resp.StatusCode)
+	}
+	f, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("writing binary: %w", err)
+	}
+	return nil
+}
+
+func VerifyBinary(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat: %w", err)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("downloaded file is empty")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+	defer f.Close()
+	header := make([]byte, 4)
+	if _, err := f.Read(header); err != nil {
+		return fmt.Errorf("reading header: %w", err)
+	}
+	if header[0] == 0x7f && header[1] == 'E' && header[2] == 'L' && header[3] == 'F' {
+		return nil
+	}
+	if header[0] == 0xcf && header[1] == 0xfa && header[2] == 0xed && header[3] == 0xfe {
+		return nil
+	}
+	if header[0] == 0xce && header[1] == 0xfa && header[2] == 0xed && header[3] == 0xfe {
+		return nil
+	}
+	return fmt.Errorf("not a valid ELF or Mach-O binary (header: %x)", header)
+}
+
+func ReplaceBinary(srcPath, destPath string) error {
+	info, err := os.Stat(destPath)
+	if err != nil {
+		return fmt.Errorf("stat current binary: %w", err)
+	}
+	if err := os.Chmod(srcPath, info.Mode().Perm()); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
+	if err := os.Rename(srcPath, destPath); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
 }

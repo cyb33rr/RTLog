@@ -182,3 +182,79 @@ func TestIsGoInstalled(t *testing.T) {
 		})
 	}
 }
+
+func TestDownloadBinary(t *testing.T) {
+	content := []byte("\x7fELFtestbinary")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}))
+	defer server.Close()
+	tmpDir := t.TempDir()
+	dest := filepath.Join(tmpDir, "rtlog-new")
+	err := DownloadBinary(server.URL, dest)
+	if err != nil {
+		t.Fatalf("DownloadBinary failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("reading downloaded file: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Errorf("content mismatch: got %q, want %q", data, content)
+	}
+}
+
+func TestReplaceBinary(t *testing.T) {
+	tmpDir := t.TempDir()
+	currentPath := filepath.Join(tmpDir, "rtlog")
+	os.WriteFile(currentPath, []byte("old"), 0755)
+	newPath := filepath.Join(tmpDir, "rtlog-new")
+	os.WriteFile(newPath, []byte("new"), 0644)
+	err := ReplaceBinary(newPath, currentPath)
+	if err != nil {
+		t.Fatalf("ReplaceBinary failed: %v", err)
+	}
+	data, _ := os.ReadFile(currentPath)
+	if string(data) != "new" {
+		t.Errorf("expected 'new', got %q", data)
+	}
+	info, _ := os.Stat(currentPath)
+	if info.Mode().Perm() != 0755 {
+		t.Errorf("expected 0755 permissions, got %o", info.Mode().Perm())
+	}
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		t.Error("expected temp file to be cleaned up")
+	}
+}
+
+func TestVerifyBinary_Valid(t *testing.T) {
+	tmpDir := t.TempDir()
+	elf := filepath.Join(tmpDir, "elf")
+	os.WriteFile(elf, []byte("\x7fELFrest"), 0644)
+	if err := VerifyBinary(elf); err != nil {
+		t.Errorf("ELF should be valid: %v", err)
+	}
+	macho := filepath.Join(tmpDir, "macho")
+	os.WriteFile(macho, []byte{0xcf, 0xfa, 0xed, 0xfe, 0x00}, 0644)
+	if err := VerifyBinary(macho); err != nil {
+		t.Errorf("Mach-O should be valid: %v", err)
+	}
+}
+
+func TestVerifyBinary_Invalid(t *testing.T) {
+	tmpDir := t.TempDir()
+	bad := filepath.Join(tmpDir, "bad")
+	os.WriteFile(bad, []byte("not a binary"), 0644)
+	if err := VerifyBinary(bad); err == nil {
+		t.Error("expected error for non-binary file")
+	}
+}
+
+func TestVerifyBinary_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	empty := filepath.Join(tmpDir, "empty")
+	os.WriteFile(empty, []byte{}, 0644)
+	if err := VerifyBinary(empty); err == nil {
+		t.Error("expected error for empty file")
+	}
+}
