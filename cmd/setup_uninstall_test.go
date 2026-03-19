@@ -244,7 +244,7 @@ func TestSetupCleanup(t *testing.T) {
 		"hook.zsh", "hook.bash",
 		"hook-noninteractive.zsh", "hook-noninteractive.bash",
 		"bash-preexec.sh", "last-update-check", "update-available",
-		"rtlog",
+		"rtlog", "uninstall.sh",
 	}
 	for _, name := range denylist {
 		os.WriteFile(filepath.Join(rtDir, name), []byte("old"), 0644)

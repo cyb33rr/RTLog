@@ -187,6 +187,7 @@ func setupCleanup(rtDir string) {
 		"last-update-check",
 		"update-available",
 		"rtlog",
+		"uninstall.sh",
 	}
 	for _, name := range denylist {
 		path := filepath.Join(rtDir, name)
