@@ -12,6 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// rtlogTag is appended to lines written by setup for safe identification during uninstall.
+const rtlogTag = "  # added by rtlog"
+
 // embeddedFS holds the embedded hook files, tools.conf, and extract.conf.
 var embeddedFS embed.FS
 
@@ -324,9 +327,18 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 			hasSourceLine = true
 		}
 
-		// Check for existing Go bin PATH export
-		if goBinExportLine != "" && !strings.HasPrefix(trimmed, "#") && trimmed == goBinExportLine {
-			hasGoBinExport = true
+		// Check for existing Go bin PATH export (tagged or untagged)
+		if goBinExportLine != "" && !strings.HasPrefix(trimmed, "#") {
+			untagged := strings.TrimSuffix(goBinExportLine, rtlogTag)
+			if trimmed == goBinExportLine {
+				hasGoBinExport = true
+			} else if trimmed == untagged {
+				// Migration: replace untagged with tagged version
+				hasGoBinExport = true
+				migrated = true
+				newLines = append(newLines, goBinExportLine)
+				continue
+			}
 		}
 
 		newLines = append(newLines, line)
@@ -508,6 +520,6 @@ func resolveGoBinDir(home, gopath, gobin string) (dir string, exportLine string)
 	if strings.HasPrefix(dir, home+string(filepath.Separator)) {
 		pathStr = "$HOME" + dir[len(home):]
 	}
-	exportLine = fmt.Sprintf(`export PATH="%s:$PATH"`, pathStr)
+	exportLine = fmt.Sprintf(`export PATH="%s:$PATH"%s`, pathStr, rtlogTag)
 	return dir, exportLine
 }

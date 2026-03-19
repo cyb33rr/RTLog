@@ -89,7 +89,7 @@ func TestUninstallNarrowHookMatching(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", "")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -130,7 +130,7 @@ func TestUninstallBlankLineCollapsing(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", "")
 
 	result, _ := os.ReadFile(zshrc)
 	// Should not have 3+ consecutive newlines (i.e. 2+ blank lines)
@@ -153,7 +153,7 @@ func TestUninstallCleanBashrc(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc", "")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -183,7 +183,7 @@ func TestUninstallBashrcDoesNotRemoveZshHook(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc", "")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -288,12 +288,12 @@ func TestSetupShellRcGoBinExport(t *testing.T) {
 	bashrc := filepath.Join(tmp, ".bashrc")
 	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
 
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
 
-	if !strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"`) {
+	if !strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`) {
 		t.Error("Go bin PATH export not added")
 	}
 	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
@@ -306,14 +306,14 @@ func TestSetupShellRcGoBinExportAlreadyPresent(t *testing.T) {
 	bashrc := filepath.Join(tmp, ".bashrc")
 	initial := strings.Join([]string{
 		"# my config",
-		`export PATH="$HOME/go/bin:$PATH"`,
+		`export PATH="$HOME/go/bin:$PATH"  # added by rtlog`,
 		"",
 		"# Red Team Operation Logger",
 		"source $HOME/.rt/hook.bash",
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -349,7 +349,7 @@ func TestUninstallCleansGoBinExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", "")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -371,22 +371,26 @@ func TestUninstallCleansCustomGoBinExport(t *testing.T) {
 
 	content := strings.Join([]string{
 		"# my config",
-		`export PATH="/opt/gowork/bin:$PATH"`,
+		`export PATH="/opt/gowork/bin:$PATH"  # added by rtlog`,
+		`export PATH="/usr/custom/bin:$PATH"`,
 		"# Red Team Operation Logger",
 		"source $HOME/.rt/hook.zsh",
 		"alias ls='ls -la'",
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", `export PATH="/opt/gowork/bin:$PATH"  # added by rtlog`)
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
 
-	// Custom Go bin PATH — uninstall can't know this was added by rtlog,
-	// so it should NOT be removed (only the default $HOME/go/bin pattern)
-	if !strings.Contains(lines, `/opt/gowork/bin`) {
-		t.Error("custom PATH export was incorrectly removed")
+	// Tagged custom export should be removed
+	if strings.Contains(lines, `/opt/gowork/bin`) {
+		t.Error("tagged custom PATH export was not removed")
+	}
+	// Untagged custom export should survive
+	if !strings.Contains(lines, `/usr/custom/bin`) {
+		t.Error("untagged custom export was incorrectly removed")
 	}
 	if !strings.Contains(lines, "alias ls='ls -la'") {
 		t.Error("alias was incorrectly removed")
@@ -408,42 +412,42 @@ func TestResolveGoBinDir(t *testing.T) {
 			gobin:      "",
 			gopath:     "",
 			wantDir:    filepath.Join(home, "go", "bin"),
-			wantExport: `export PATH="$HOME/go/bin:$PATH"`,
+			wantExport: `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`,
 		},
 		{
 			name:       "custom GOPATH under home",
 			gobin:      "",
 			gopath:     filepath.Join(home, "mygo"),
 			wantDir:    filepath.Join(home, "mygo", "bin"),
-			wantExport: `export PATH="$HOME/mygo/bin:$PATH"`,
+			wantExport: `export PATH="$HOME/mygo/bin:$PATH"  # added by rtlog`,
 		},
 		{
 			name:       "custom GOPATH outside home",
 			gobin:      "",
 			gopath:     "/opt/gowork",
 			wantDir:    "/opt/gowork/bin",
-			wantExport: `export PATH="/opt/gowork/bin:$PATH"`,
+			wantExport: `export PATH="/opt/gowork/bin:$PATH"  # added by rtlog`,
 		},
 		{
 			name:       "GOBIN set under home",
 			gobin:      filepath.Join(home, ".gobin"),
 			gopath:     "",
 			wantDir:    filepath.Join(home, ".gobin"),
-			wantExport: `export PATH="$HOME/.gobin:$PATH"`,
+			wantExport: `export PATH="$HOME/.gobin:$PATH"  # added by rtlog`,
 		},
 		{
 			name:       "GOBIN set outside home",
 			gobin:      "/usr/local/gobin",
 			gopath:     "",
 			wantDir:    "/usr/local/gobin",
-			wantExport: `export PATH="/usr/local/gobin:$PATH"`,
+			wantExport: `export PATH="/usr/local/gobin:$PATH"  # added by rtlog`,
 		},
 		{
 			name:       "GOBIN takes priority over GOPATH",
 			gobin:      filepath.Join(home, ".gobin"),
 			gopath:     filepath.Join(home, "mygo"),
 			wantDir:    filepath.Join(home, ".gobin"),
-			wantExport: `export PATH="$HOME/.gobin:$PATH"`,
+			wantExport: `export PATH="$HOME/.gobin:$PATH"  # added by rtlog`,
 		},
 	}
 
@@ -524,7 +528,7 @@ func TestUninstallOnOldInstall(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", "")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -549,7 +553,7 @@ func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -600,6 +604,34 @@ func TestSetupShellRcMigratesRepoSourceLines(t *testing.T) {
 	}
 }
 
+func TestSetupShellRcMigratesUntaggedExport(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/go/bin:$PATH"`,
+		"",
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(content), 0644)
+
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	// Should have tagged version
+	if !strings.Contains(lines, `# added by rtlog`) {
+		t.Error("untagged export was not migrated to tagged version")
+	}
+	// Should not have duplicate
+	if strings.Count(lines, `go/bin`) != 1 {
+		t.Error("duplicate Go bin export found after migration")
+	}
+}
+
 func TestUninstallCleansRepoSourceLines(t *testing.T) {
 	tmp := t.TempDir()
 	zshrc := filepath.Join(tmp, ".zshrc")
@@ -614,7 +646,7 @@ func TestUninstallCleansRepoSourceLines(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", "")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)

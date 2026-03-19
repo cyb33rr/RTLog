@@ -46,9 +46,12 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	fmt.Println("=== Red Team Operation Logger - Uninstaller ===")
 	fmt.Println()
 
+	// Resolve Go bin dir for cleanup and advice
+	dir, goBinExportLine := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
+
 	// 1. Remove hook lines from shell rc files
-	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
-	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc", goBinExportLine)
+	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc", goBinExportLine)
 
 	// 2. Clean non-interactive hook lines
 	zshenv := filepath.Join(home, ".zshenv")
@@ -60,7 +63,6 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	uninstallRemoveDir(rtDir)
 
 	// 4. Advise on binary removal
-	dir, _ := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
 	binPath := filepath.Join(dir, "rtlog")
 	fmt.Printf("[!]  Binary may be at %s\n", binPath)
 	fmt.Println("     Remove it with: rm", binPath)
@@ -74,7 +76,7 @@ func runUninstall(cmd *cobra.Command, args []string) {
 // uninstallCleanShellRc removes hook-related lines from a shell rc file.
 // hookPattern is the hook path to match (e.g. ".rt/hook.zsh" or ".rt/hook.bash").
 // rcName is a display name (e.g. ".zshrc" or ".bashrc").
-func uninstallCleanShellRc(rcFile, hookPattern, rcName string) {
+func uninstallCleanShellRc(rcFile, hookPattern, rcName, goBinExportLine string) {
 	content, err := os.ReadFile(rcFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -118,7 +120,11 @@ func uninstallCleanShellRc(rcFile, hookPattern, rcName string) {
 			continue
 		}
 
-		// Remove Go bin PATH export added by setup (default path)
+		// Remove Go bin PATH export: tagged lines (any path) or untagged default (backward compat)
+		if strings.Contains(trimmed, "export PATH=") && strings.HasSuffix(trimmed, rtlogTag) {
+			removed = true
+			continue
+		}
 		if trimmed == `export PATH="$HOME/go/bin:$PATH"` {
 			removed = true
 			continue
