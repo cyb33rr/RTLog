@@ -75,7 +75,7 @@ _rtlog_ni_debug_handler() {
     [[ -n "$_rtlog_ni_pending_tool" ]] && return
 
     local cmd="$BASH_COMMAND"
-    [[ -n "$cmd" ]] || return
+    [[ -n "$cmd" ]] || return 0
 
     # Don't capture our own trap/cleanup commands
     [[ "$cmd" == _rtlog_ni_* ]] && return
@@ -93,10 +93,10 @@ _rtlog_ni_debug_handler() {
         esac
     done
 
-    (( ${#words[@]} > 0 )) || return
+    (( ${#words[@]} > 0 )) || return 0
     local tool="${words[0]##*/}"
 
-    _rtlog_ni_match "$tool" || return
+    _rtlog_ni_match "$tool" || return 0
 
     _rtlog_ni_pending_tool="$tool"
     _rtlog_ni_pending_cmd="$cmd"
