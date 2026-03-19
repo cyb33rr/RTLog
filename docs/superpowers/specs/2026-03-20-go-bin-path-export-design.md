@@ -36,11 +36,10 @@ Detection of "already present": match lines where the non-commented, trimmed lin
 
 ### Uninstall cleanup
 
-`uninstallCleanShellRc` in `cmd/uninstall.go` must also remove Go bin PATH export lines. Match any of:
+`uninstallCleanShellRc` in `cmd/uninstall.go` must also remove the default Go bin PATH export line:
 - `export PATH="$HOME/go/bin:$PATH"`
-- Any line matching `export PATH="` + resolved Go bin dir + `:$PATH"`
 
-This ensures `rtlog uninstall` doesn't leave orphaned exports.
+Custom GOBIN/GOPATH paths are not removed at uninstall time because there is no persistent state recording what setup originally wrote, and the user's environment may have changed. Removing only the well-known default avoids accidentally deleting user-configured exports.
 
 ### Output
 
