@@ -68,7 +68,7 @@ _rtlog_ni_pending_cmd=""
 _rtlog_ni_pending_start=""
 _rtlog_ni_capturing=0
 _rtlog_ni_fd_out="" _rtlog_ni_fd_err=""
-_rtlog_ni_outfile=$(mktemp /tmp/.rtlog_ni_out.XXXXXXXX)
+_rtlog_ni_outfile=""
 
 # --- DEBUG trap handler ---
 _rtlog_ni_debug_handler() {
@@ -104,7 +104,7 @@ _rtlog_ni_debug_handler() {
 
     # Output capture
     if [[ "$_rtlog_ni_capture" == "1" ]]; then
-        : > "$_rtlog_ni_outfile"
+        _rtlog_ni_outfile=$(mktemp /tmp/.rtlog_ni_out.XXXXXXXX)
         exec {_rtlog_ni_fd_out}>&1 {_rtlog_ni_fd_err}>&2
         exec > >(tee -- "$_rtlog_ni_outfile") 2>&1
         _rtlog_ni_capturing=1
@@ -123,7 +123,10 @@ _rtlog_ni_exit_handler() {
         command sleep 0.05 2>/dev/null
     fi
 
-    [[ -n "$_rtlog_ni_pending_tool" ]] || return
+    if [[ -z "$_rtlog_ni_pending_tool" ]]; then
+        [[ -n "$_rtlog_ni_outfile" ]] && command rm -f "$_rtlog_ni_outfile" 2>/dev/null
+        return
+    fi
 
     # Duration (use awk for float arithmetic)
     local _dur
@@ -143,7 +146,8 @@ _rtlog_ni_exit_handler() {
         --cwd "$PWD" \
         "${_out_args[@]}" 2>/dev/null
 
-    command rm -f "$_rtlog_ni_outfile" 2>/dev/null
+    [[ -n "$_rtlog_ni_outfile" ]] && command rm -f "$_rtlog_ni_outfile" 2>/dev/null
+    _rtlog_ni_outfile=""
 }
 
 # --- Register traps ---

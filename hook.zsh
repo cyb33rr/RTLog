@@ -56,7 +56,7 @@ _rtlog_tty=$(tty 2>/dev/null) || true
 [[ "$_rtlog_tty" == /dev/* ]] || _rtlog_tty="unknown"
 
 # --- Temp file for output capture (per-shell PID) ---
-_rtlog_tmpfile=$(mktemp /tmp/.rtlog_out.XXXXXXXX)
+_rtlog_tmpfile=""
 
 # --- Load tools.conf ---
 _rtlog_load_conf() {
@@ -137,7 +137,7 @@ _rtlog_preexec() {
 
     # --- Output capture ---
     if [[ "$RTLOG_CAPTURE" == "1" ]]; then
-        : > "$_rtlog_tmpfile"
+        _rtlog_tmpfile=$(mktemp /tmp/.rtlog_out.XXXXXXXX)
         exec {_rtlog_fd_out}>&1 {_rtlog_fd_err}>&2
         exec > >(tee -- "$_rtlog_tmpfile") 2>&1
         _rtlog_capturing=1
@@ -184,7 +184,8 @@ _rtlog_precmd() {
         --tty "$_rtlog_tty" \
         "${_out_args[@]}" 2>/dev/null
 
-    command rm -f "$_rtlog_tmpfile" 2>/dev/null
+    [[ -n "$_rtlog_tmpfile" ]] && command rm -f "$_rtlog_tmpfile" 2>/dev/null
+    _rtlog_tmpfile=""
 
     # Reset
     _rtlog_pending_tool=""
