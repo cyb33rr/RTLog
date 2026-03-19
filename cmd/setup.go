@@ -60,19 +60,43 @@ func runSetup(cmd *cobra.Command, args []string) {
 	fmt.Println()
 
 	// 1. Create ~/.rt/logs/ (always needed)
-	setupCreateDir(logDir)
+	if err := setupCreateDir(logDir); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
 
 	// 2. Cleanup stale files from previous versions
 	setupCleanup(rtDir)
 
 	// 3. Write embedded files (both shells, always)
-	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"), false)
-	setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"), false)
-	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false)
-	setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"), true)
-	setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"), true)
-	setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false)
-	setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false)
+	if err := setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"), false); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"), false); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"), true); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"), true); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+		os.Exit(1)
+	}
 
 	// 4. Binary installation — detect existing path
 	kind, binPath := detectBinaryPath(home)
@@ -98,7 +122,10 @@ func runSetup(cmd *cobra.Command, args []string) {
 		}
 
 	case installDefault:
-		setupCreateDir(localBin)
+		if err := setupCreateDir(localBin); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+			os.Exit(1)
+		}
 		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
 			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
 			os.Exit(1)
@@ -106,7 +133,10 @@ func runSetup(cmd *cobra.Command, args []string) {
 		setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
 
 	case installFresh:
-		setupCreateDir(localBin)
+		if err := setupCreateDir(localBin); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+			os.Exit(1)
+		}
 		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
 			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
 			os.Exit(1)
@@ -119,10 +149,16 @@ func runSetup(cmd *cobra.Command, args []string) {
 	bashrcExists := fileExists(bashrc)
 
 	if zshrcExists {
-		setupShellRc(zshrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.zsh", ".zshrc")
+		if err := setupShellRc(zshrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+			os.Exit(1)
+		}
 	}
 	if bashrcExists {
-		setupShellRc(bashrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.bash", ".bashrc")
+		if err := setupShellRc(bashrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
+			os.Exit(1)
+		}
 	}
 	if !zshrcExists && !bashrcExists {
 		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
@@ -161,16 +197,16 @@ func runSetup(cmd *cobra.Command, args []string) {
 }
 
 // setupCreateDir creates a directory if it doesn't exist.
-func setupCreateDir(dir string) {
+func setupCreateDir(dir string) error {
 	if info, err := os.Stat(dir); err == nil && info.IsDir() {
 		fmt.Printf("[ok] Directory exists: %s\n", dir)
-		return
+		return nil
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to create %s: %v\n", dir, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create %s: %w", dir, err)
 	}
 	fmt.Printf("[+]  Created directory: %s\n", dir)
+	return nil
 }
 
 // setupCleanup deletes stale application-managed files from rtDir.
@@ -196,18 +232,17 @@ func setupCleanup(rtDir string) {
 // setupWriteEmbedded writes an embedded file to dst, skipping if identical.
 // If userConfig is true and the file already exists with different content,
 // the user is prompted before overwriting.
-func setupWriteEmbedded(name, dst string, userConfig bool) {
+func setupWriteEmbedded(name, dst string, userConfig bool) error {
 	data, err := embeddedFS.ReadFile(name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Embedded file %s not found: %v\n", name, err)
-		os.Exit(1)
+		return fmt.Errorf("embedded file %s not found: %w", name, err)
 	}
 
 	// Check if existing file is identical
 	existing, err := os.ReadFile(dst)
 	if err == nil && bytes.Equal(existing, data) {
 		fmt.Printf("[ok] %s is up to date\n", name)
-		return
+		return nil
 	}
 
 	// For user-editable config files, prompt before overwriting
@@ -218,7 +253,7 @@ func setupWriteEmbedded(name, dst string, userConfig bool) {
 		answer = strings.TrimSpace(strings.ToLower(answer))
 		if answer != "y" && answer != "yes" {
 			fmt.Printf("[ok] Keeping existing %s\n", name)
-			return
+			return nil
 		}
 	}
 
@@ -226,26 +261,23 @@ func setupWriteEmbedded(name, dst string, userConfig bool) {
 	dir := filepath.Dir(dst)
 	tmp, err := os.CreateTemp(dir, "."+name+".")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file for %s: %v\n", name, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create temp file for %s: %w", name, err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to write %s: %v\n", name, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to write %s: %w", name, err)
 	}
 	if err := tmp.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to close %s: %v\n", name, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to close %s: %w", name, err)
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to install %s: %v\n", name, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to install %s: %w", name, err)
 	}
 	fmt.Printf("[+]  Installed %s -> %s\n", name, dst)
+	return nil
 }
 
 // setupCopySelfTo copies the running binary to dst using atomic temp+rename.
@@ -415,14 +447,13 @@ func detectBinaryPath(home string) (installKind, string) {
 
 // setupShellRc ensures PATH and hook source lines are in the given rc file.
 // hookFile is "hook.zsh" or "hook.bash". rcName is ".zshrc" or ".bashrc" (for messages).
-func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExportLine, hookFile, rcName string) {
+func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExportLine, hookFile, rcName string) error {
 	sourceLine := fmt.Sprintf("source %s/.rt/%s", "$HOME", hookFile)
 
 	// Read existing content
 	content, err := os.ReadFile(rcFile)
 	if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "[!]  Cannot read %s: %v\n", rcFile, err)
-		os.Exit(1)
+		return fmt.Errorf("cannot read %s: %w", rcFile, err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -485,22 +516,20 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExpor
 	// Atomic write
 	newContent := strings.Join(newLines, "\n")
 	if string(content) == newContent {
-		return
+		return nil
 	}
 
 	dir := filepath.Dir(rcFile)
 	tmp, err := os.CreateTemp(dir, "."+rcName+".")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
 	if _, err := tmp.WriteString(newContent); err != nil {
 		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to write %s: %v\n", rcName, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to write %s: %w", rcName, err)
 	}
 	// Preserve original permissions
 	if info, err := os.Stat(rcFile); err == nil {
@@ -509,13 +538,12 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExpor
 		tmp.Chmod(0644)
 	}
 	if err := tmp.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to close temp file: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 	if err := os.Rename(tmpName, rcFile); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to update %s: %v\n", rcName, err)
-		os.Exit(1)
+		return fmt.Errorf("failed to update %s: %w", rcName, err)
 	}
+	return nil
 }
 
 // setupZshenv ensures the non-interactive zsh hook is sourced from ~/.zshenv.
