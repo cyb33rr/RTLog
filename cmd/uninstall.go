@@ -140,6 +140,12 @@ func uninstallCleanShellRc(rcFile, hookPattern, rcName string) {
 			continue
 		}
 
+		// Remove Go bin PATH export added by setup (default path)
+		if trimmed == `export PATH="$HOME/go/bin:$PATH"` {
+			removed = true
+			continue
+		}
+
 		newLines = append(newLines, line)
 	}
 

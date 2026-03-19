@@ -490,6 +490,64 @@ func TestSetupShellRcNoGoBinExport(t *testing.T) {
 	}
 }
 
+func TestUninstallCleansGoBinExport(t *testing.T) {
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/go/bin:$PATH"`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.zsh",
+		`export PATH="$HOME/.local/bin:$PATH"`,
+		"export EDITOR=vim",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	if strings.Contains(lines, `$HOME/go/bin`) {
+		t.Error("Go bin PATH export was not removed")
+	}
+	if strings.Contains(lines, `$HOME/.local/bin`) {
+		t.Error("~/.local/bin PATH export was not removed")
+	}
+	if !strings.Contains(lines, "export EDITOR=vim") {
+		t.Error("unrelated export was incorrectly removed")
+	}
+}
+
+func TestUninstallCleansCustomGoBinExport(t *testing.T) {
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="/opt/gowork/bin:$PATH"`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.zsh",
+		"alias ls='ls -la'",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	// Custom Go bin PATH — uninstall can't know this was added by rtlog,
+	// so it should NOT be removed (only the default $HOME/go/bin pattern)
+	if !strings.Contains(lines, `/opt/gowork/bin`) {
+		t.Error("custom PATH export was incorrectly removed")
+	}
+	if !strings.Contains(lines, "alias ls='ls -la'") {
+		t.Error("alias was incorrectly removed")
+	}
+}
+
 func TestResolveGoBinDir(t *testing.T) {
 	home := "/home/testuser"
 
