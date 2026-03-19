@@ -29,10 +29,10 @@ var setupCmd = &cobra.Command{
 	Long: `Idempotent setup that installs rtlog to ~/.rt/ and configures zsh and/or bash.
 
 Steps performed:
-  1. Create ~/.rt/logs/ and ~/.local/bin/
-  2. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
-  3. Copy this binary to ~/.rt/rtlog  (skipped if already on PATH)
-  4. Create symlink ~/.local/bin/rtlog  (skipped if already on PATH)
+  1. Create ~/.rt/logs/
+  2. Clean up stale files from previous versions
+  3. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
+  4. Detect binary on PATH and install (custom path, default, or fresh install)
   5. Configure ~/.zshrc and/or ~/.bashrc (hook source line; PATH export)
   6. Configure ~/.zshenv for non-interactive zsh capture
   7. Export BASH_ENV in shell rc files for non-interactive bash capture`,
@@ -60,11 +60,13 @@ func runSetup(cmd *cobra.Command, args []string) {
 	fmt.Println("=== Red Team Operation Logger - Setup ===")
 	fmt.Println()
 
-	// 1. Create directories
+	// 1. Create ~/.rt/logs/ (always needed)
 	setupCreateDir(logDir)
-	setupCreateDir(localBin)
 
-	// 2. Write embedded files (both shells, always)
+	// 2. Cleanup stale files from previous versions
+	setupCleanup(rtDir)
+
+	// 3. Write embedded files (both shells, always)
 	setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"), false)
 	setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"), false)
 	setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false)
@@ -73,14 +75,42 @@ func runSetup(cmd *cobra.Command, args []string) {
 	setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false)
 	setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false)
 
-	// 3-4. Copy binary + symlink (skip if already on PATH, e.g. go install)
-	onPath := isOnPath()
+	// 4. Binary installation — detect existing path
+	kind, binPath := detectBinaryPath(home)
 	addPathExport := false
-	if !onPath {
-		setupCopySelf(filepath.Join(rtDir, "rtlog"))
+
+	switch kind {
+	case installGoInstall:
+		fmt.Println("[ok] Installed via 'go install', skipping binary copy")
+		fmt.Println("     To update: go install github.com/cyb33rr/rtlog@latest")
+
+	case installCustom:
+		fmt.Printf("[ok] Binary found at custom path: %s\n", binPath)
+		if err := setupCopySelfTo(binPath); err != nil {
+			if os.IsPermission(err) {
+				fmt.Fprintf(os.Stderr, "[!]  Permission denied writing to %s\n", binPath)
+				fmt.Fprintf(os.Stderr, "     Try: sudo rtlog setup\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "[!]  Failed to update binary: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+	case installDefault:
+		setupCreateDir(localBin)
+		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
+			os.Exit(1)
+		}
+		setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
+
+	case installFresh:
+		setupCreateDir(localBin)
+		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
+			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
+			os.Exit(1)
+		}
 		addPathExport = setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
-	} else {
-		fmt.Println("[ok] Binary already on PATH, skipping copy and symlink")
 	}
 
 	// 5. Configure shell rc files based on existence
@@ -217,80 +247,6 @@ func setupWriteEmbedded(name, dst string, userConfig bool) {
 	fmt.Printf("[+]  Installed %s -> %s\n", name, dst)
 }
 
-// setupCopySelf copies the running binary to dst using atomic temp+rename.
-func setupCopySelf(dst string) {
-	self, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Cannot determine own path: %v\n", err)
-		os.Exit(1)
-	}
-	self, err = filepath.EvalSymlinks(self)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Cannot resolve own path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// If we're already at the destination, skip
-	absDst, _ := filepath.Abs(dst)
-	if self == absDst {
-		fmt.Printf("[ok] Binary already at %s\n", dst)
-		return
-	}
-
-	// Check if existing binary is identical
-	selfInfo, err := os.Stat(self)
-	if err == nil {
-		dstInfo, derr := os.Stat(dst)
-		if derr == nil && selfInfo.Size() == dstInfo.Size() {
-			// Quick size check — if sizes match, compare content
-			selfData, e1 := os.ReadFile(self)
-			dstData, e2 := os.ReadFile(dst)
-			if e1 == nil && e2 == nil && bytes.Equal(selfData, dstData) {
-				fmt.Printf("[ok] Binary is up to date: %s\n", dst)
-				return
-			}
-		}
-	}
-
-	// Atomic copy: write to temp + rename
-	dir := filepath.Dir(dst)
-	tmp, err := os.CreateTemp(dir, ".rtlog.")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to create temp file: %v\n", err)
-		os.Exit(1)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	src, err := os.Open(self)
-	if err != nil {
-		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Cannot open self: %v\n", err)
-		os.Exit(1)
-	}
-	defer src.Close()
-
-	if _, err := io.Copy(tmp, src); err != nil {
-		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to copy binary: %v\n", err)
-		os.Exit(1)
-	}
-	if err := tmp.Chmod(0755); err != nil {
-		tmp.Close()
-		fmt.Fprintf(os.Stderr, "[!]  Failed to set permissions: %v\n", err)
-		os.Exit(1)
-	}
-	if err := tmp.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to close temp file: %v\n", err)
-		os.Exit(1)
-	}
-	if err := os.Rename(tmpName, dst); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("[+]  Installed binary: %s\n", dst)
-}
-
 // setupCopySelfTo copies the running binary to dst using atomic temp+rename.
 // Returns an error instead of exiting, so callers can handle permission errors.
 func setupCopySelfTo(dst string) error {
@@ -411,23 +367,6 @@ func collapseBlankLines(lines []string) []string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
-}
-
-// isOnPath checks if the running binary's directory is already in $PATH.
-func isOnPath() bool {
-	self, err := os.Executable()
-	if err != nil {
-		return false
-	}
-	self, _ = filepath.EvalSymlinks(self)
-	selfDir := filepath.Dir(self)
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		abs, err := filepath.Abs(dir)
-		if err == nil && abs == selfDir {
-			return true
-		}
-	}
-	return false
 }
 
 // installKind classifies how rtlog is installed.
