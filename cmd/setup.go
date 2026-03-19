@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cyb33rr/rtlog/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -399,7 +398,7 @@ func detectBinaryPath(home string) (installKind, string) {
 		gopath = filepath.Join(home, "go")
 	}
 	gobin := os.Getenv("GOBIN")
-	if update.IsGoInstalled(resolved, gopath, gobin) {
+	if isGoInstalled(resolved, gopath, gobin) {
 		return installGoInstall, resolved
 	}
 
@@ -603,4 +602,17 @@ func setupBashEnv(rcFile, rtDir, rcName string) {
 	tmp.Close()
 	os.Rename(tmpName, rcFile)
 	fmt.Printf("[+]  Added BASH_ENV export to %s\n", rcName)
+}
+
+// isGoInstalled checks if the binary path is inside GOPATH/bin or GOBIN.
+func isGoInstalled(binPath, gopath, gobin string) bool {
+	if gobin != "" && filepath.Dir(binPath) == gobin {
+		return true
+	}
+	if gopath != "" {
+		if filepath.Dir(binPath) == filepath.Join(gopath, "bin") {
+			return true
+		}
+	}
+	return false
 }
