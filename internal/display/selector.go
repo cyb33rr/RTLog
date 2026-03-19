@@ -73,25 +73,71 @@ func CollectTags(entries []Entry) []string {
 
 // Selector provides an interactive terminal UI for browsing log entries.
 type Selector struct {
-	entries   []Entry
-	header    string
-	idxWidth  int
-	cursor    int
-	offset    int
+	entries   []Entry // all entries, chronological (oldest first)
+	cursor    int     // position in filtered slice
+	offset    int     // scroll offset in filtered slice
 	expanded  bool
-	reversed  bool // true = newest first (default)
-	outScroll int  // scroll offset within expanded output
-	lastLines int  // number of \r\n written on last render
+	outScroll int
+	lastLines int
+
+	// Filtering
+	filter    string // text filter input
+	tagFilter string // "" = all
+	failOnly  bool
+	filtered  []int    // indices into entries matching current filters
+	allTags   []string // unique tags for Tab cycling
+	tagIdx    int      // current position in tag cycle (0 = "all")
 }
 
-// NewSelector creates a Selector for the given entries.
-func NewSelector(entries []Entry, header string, idxWidth int) *Selector {
-	return &Selector{
-		entries:  entries,
-		header:   header,
-		idxWidth: idxWidth,
-		reversed: true,
+// NewSelector creates a Selector for the given entries (chronological order, oldest first).
+func NewSelector(entries []Entry) *Selector {
+	s := &Selector{
+		entries: entries,
 	}
+	s.allTags = CollectTags(entries)
+	s.filtered = ApplyFilters(entries, "", "", false)
+	if len(s.filtered) > 0 {
+		s.cursor = len(s.filtered) - 1
+	}
+	return s
+}
+
+// applyAndReset rebuilds the filtered slice and resets cursor to newest.
+func (s *Selector) applyAndReset() {
+	s.filtered = ApplyFilters(s.entries, s.filter, s.tagFilter, s.failOnly)
+	if len(s.filtered) > 0 {
+		s.cursor = len(s.filtered) - 1
+	} else {
+		s.cursor = 0
+	}
+	s.offset = 0
+	s.expanded = false
+	s.outScroll = 0
+}
+
+// renderFilterBar builds the filter bar string.
+func (s *Selector) renderFilterBar() string {
+	var parts []string
+
+	if s.tagFilter != "" {
+		parts = append(parts, Colorize(fmt.Sprintf("[%s]", s.tagFilter), Yellow))
+	}
+	if s.failOnly {
+		parts = append(parts, Colorize("[!fail]", Red))
+	}
+
+	total := len(s.entries)
+	matched := len(s.filtered)
+	hasFilter := s.filter != "" || s.tagFilter != "" || s.failOnly
+	if hasFilter {
+		parts = append(parts, fmt.Sprintf("%d/%d matches", matched, total))
+	} else {
+		parts = append(parts, fmt.Sprintf("%d entries", total))
+	}
+
+	parts = append(parts, fmt.Sprintf("▸ %s_", s.filter))
+
+	return "  " + strings.Join(parts, "   ")
 }
 
 // Run enters raw mode and runs the interactive selector loop.
@@ -119,36 +165,58 @@ func (s *Selector) Run() error {
 			return nil
 		}
 
-		if n == 1 {
-			switch buf[0] {
-			case 'q', 27:
-				return nil
-			case 13:
-				s.expanded = !s.expanded
-				s.outScroll = 0
-			case 'r':
-				for i, j := 0, len(s.entries)-1; i < j; i, j = i+1, j-1 {
-					s.entries[i], s.entries[j] = s.entries[j], s.entries[i]
-				}
-				s.reversed = !s.reversed
-				s.cursor = 0
-				s.offset = 0
-				s.outScroll = 0
-				s.expanded = false
-			}
-		} else if n == 3 && buf[0] == 27 && buf[1] == '[' {
+		// Escape sequence (arrow keys, etc.)
+		if n == 3 && buf[0] == 27 && buf[1] == '[' {
 			switch buf[2] {
-			case 'A':
+			case 'A': // Up arrow
 				if s.expanded {
 					s.scrollOutUp()
 				} else {
 					s.moveUp()
 				}
-			case 'B':
+			case 'B': // Down arrow
 				if s.expanded {
 					s.scrollOutDown()
 				} else {
 					s.moveDown()
+				}
+			}
+			continue
+		}
+
+		if n == 1 {
+			switch buf[0] {
+			case 27: // Esc (lone byte = quit)
+				return nil
+			case 13: // Enter
+				if len(s.filtered) > 0 {
+					s.expanded = !s.expanded
+					s.outScroll = 0
+				}
+			case 9: // Tab — cycle tag filter
+				if len(s.allTags) > 0 {
+					s.tagIdx = (s.tagIdx + 1) % (len(s.allTags) + 1)
+					if s.tagIdx == 0 {
+						s.tagFilter = ""
+					} else {
+						s.tagFilter = s.allTags[s.tagIdx-1]
+					}
+					s.applyAndReset()
+				}
+			case 6: // Ctrl+F — toggle failed only
+				s.failOnly = !s.failOnly
+				s.applyAndReset()
+			case 127, 8: // Backspace (DEL or BS)
+				if len(s.filter) > 0 {
+					runes := []rune(s.filter)
+					s.filter = string(runes[:len(runes)-1])
+					s.applyAndReset()
+				}
+			default:
+				// Printable ASCII
+				if buf[0] >= 0x20 && buf[0] <= 0x7E {
+					s.filter += string(buf[0])
+					s.applyAndReset()
 				}
 			}
 		}
@@ -156,7 +224,7 @@ func (s *Selector) Run() error {
 }
 
 func (s *Selector) moveDown() {
-	if s.cursor < len(s.entries)-1 {
+	if s.cursor < len(s.filtered)-1 {
 		s.cursor++
 		s.outScroll = 0
 	}
@@ -177,14 +245,6 @@ func (s *Selector) scrollOutUp() {
 	if s.outScroll > 0 {
 		s.outScroll--
 	}
-}
-
-// origIdx returns the original 1-based entry number for position i.
-func (s *Selector) origIdx(i int) int {
-	if s.reversed {
-		return len(s.entries) - i
-	}
-	return i + 1
 }
 
 func (s *Selector) clearPrev() {
@@ -272,96 +332,83 @@ func (s *Selector) render() {
 		lines++
 	}
 
-	// Header
-	writeln(Colorize(s.header, Bold))
-	writeln("")
-
 	var outLines []string
 	var wrapExtra int
-	if s.expanded {
+	if s.expanded && len(s.filtered) > 0 {
 		outLines = s.getOutputLines(h)
-		// Calculate extra lines from wrapping the selected entry
-		curLine := RE_ANSI.ReplaceAllString(FmtEntry(s.entries[s.cursor], s.origIdx(s.cursor), s.idxWidth), "")
+		entryIdx := s.filtered[s.cursor]
+		curLine := RE_ANSI.ReplaceAllString(FmtCompact(s.entries[entryIdx]), "")
 		nRunes := len([]rune(curLine))
 		if nRunes > w {
 			wrapExtra = (nRunes - 1) / w
 		}
 	}
 
-	visibleLines := h - 4
-	if visibleLines < 1 {
-		visibleLines = 1
-	}
-
-	entrySlots := visibleLines - len(outLines) - wrapExtra
-	if entrySlots > 10 {
-		entrySlots = 10
-	}
+	entrySlots := h - 2 - len(outLines) - wrapExtra
 	if entrySlots < 1 {
 		entrySlots = 1
 	}
 
-	if s.cursor < s.offset {
-		s.offset = s.cursor
-	}
-	if s.cursor >= s.offset+entrySlots {
-		s.offset = s.cursor - entrySlots + 1
-	}
+	if len(s.filtered) == 0 {
+		msg := "(no matches)"
+		if len(s.entries) == 0 {
+			msg = "(no entries)"
+		}
+		writeln("")
+		writeln(Colorize("    "+msg, Dim))
+		writeln("")
+	} else {
+		if s.cursor < s.offset {
+			s.offset = s.cursor
+		}
+		if s.cursor >= s.offset+entrySlots {
+			s.offset = s.cursor - entrySlots + 1
+		}
 
-	end := s.offset + entrySlots
-	if end > len(s.entries) {
-		end = len(s.entries)
-	}
+		end := s.offset + entrySlots
+		if end > len(s.filtered) {
+			end = len(s.filtered)
+		}
 
-	for i := s.offset; i < end; i++ {
-		line := FmtEntry(s.entries[i], s.origIdx(i), s.idxWidth)
-		if i == s.cursor {
-			plain := RE_ANSI.ReplaceAllString(line, "")
-			if s.expanded {
-				// Wrap full text across multiple lines
-				runes := []rune(plain)
-				for off := 0; off < len(runes); off += w {
-					wEnd := off + w
-					if wEnd > len(runes) {
-						wEnd = len(runes)
+		for i := s.offset; i < end; i++ {
+			entryIdx := s.filtered[i]
+			line := FmtCompact(s.entries[entryIdx])
+			if i == s.cursor {
+				plain := RE_ANSI.ReplaceAllString(line, "")
+				if s.expanded {
+					runes := []rune(plain)
+					for off := 0; off < len(runes); off += w {
+						wEnd := off + w
+						if wEnd > len(runes) {
+							wEnd = len(runes)
+						}
+						writeln("\033[7m" + string(runes[off:wEnd]) + "\033[0m")
 					}
-					writeln("\033[7m" + string(runes[off:wEnd]) + "\033[0m")
+				} else {
+					writeln("\033[7m" + plain + "\033[0m")
+				}
+				for _, ol := range outLines {
+					writeln(ol)
 				}
 			} else {
-				writeln("\033[7m" + plain + "\033[0m")
+				writeln(line)
 			}
-			for _, ol := range outLines {
-				writeln(ol)
-			}
-		} else {
-			writeln(line)
 		}
 	}
 
-	// Footer (no trailing \r\n — cursor stays on this line)
 	writeln("")
-	enterHint := "view output"
-	if s.expanded {
-		enterHint = "hide output"
-	}
-	curPos := s.origIdx(s.cursor)
-	if len(s.entries) == 0 {
-		curPos = 0
-	}
-	orderHint := "oldest first"
-	if s.reversed {
-		orderHint = "newest first"
-	}
-	footer := fmt.Sprintf(" %d/%d  [↑/↓] navigate  [Enter] %s  [r] reverse (%s)  [q] quit", curPos, len(s.entries), enterHint, orderHint)
-	b.WriteString(truncateVisible(Colorize(footer, Dim), w))
-	// Don't add \r\n for the last line — lines count is for how many to move UP
+	b.WriteString(truncateVisible(s.renderFilterBar(), w))
 
 	os.Stdout.WriteString(b.String())
 	s.lastLines = lines
 }
 
 func (s *Selector) getOutputLines(termHeight int) []string {
-	entry := s.entries[s.cursor]
+	if s.cursor >= len(s.filtered) {
+		return nil
+	}
+	entryIdx := s.filtered[s.cursor]
+	entry := s.entries[entryIdx]
 	text, _ := entry["out"].(string)
 
 	if strings.TrimSpace(text) == "" {
@@ -377,7 +424,6 @@ func (s *Selector) getOutputLines(termHeight int) []string {
 		maxLines = 1
 	}
 
-	// Clamp scroll offset
 	total := len(raw)
 	s.outScroll = max(0, min(s.outScroll, total-maxLines))
 	end := min(s.outScroll+maxLines, total)
@@ -387,7 +433,6 @@ func (s *Selector) getOutputLines(termHeight int) []string {
 		lines = append(lines, "    "+raw[i])
 	}
 
-	// Scroll indicator
 	if total > maxLines {
 		indicator := fmt.Sprintf("    ── line %d-%d of %d (↑/↓ scroll, Enter close) ──", s.outScroll+1, end, total)
 		lines = append(lines, Colorize(indicator, Dim))
