@@ -30,20 +30,18 @@ func TestFmtCompactBasic(t *testing.T) {
 	if !strings.Contains(got, "nmap -sV 10.0.0.1") {
 		t.Errorf("missing command in %q", got)
 	}
-	if !strings.Contains(got, "exit:0") {
-		t.Errorf("missing exit code in %q", got)
-	}
-	if !strings.Contains(got, "8.1s") {
-		t.Errorf("missing duration in %q", got)
-	}
-	if !strings.Contains(got, "[recon]") {
-		t.Errorf("missing tag in %q", got)
-	}
+	// When note exists, note replaces exit+dur+tag but [+out] stays
 	if !strings.Contains(got, "# port scan") {
 		t.Errorf("missing note in %q", got)
 	}
+	if strings.Contains(got, "exit:0") {
+		t.Errorf("should not have exit code when note exists: %q", got)
+	}
+	if strings.Contains(got, "[recon]") {
+		t.Errorf("should not have tag when note exists: %q", got)
+	}
 	if !strings.Contains(got, "[+out]") {
-		t.Errorf("missing [+out] in %q", got)
+		t.Errorf("missing [+out] when note exists with output: %q", got)
 	}
 }
 
@@ -127,15 +125,12 @@ func TestFmtCompactTruncatesLongCommand(t *testing.T) {
 	if !strings.Contains(got, "…") {
 		t.Errorf("expected ellipsis in truncated command: %q", got)
 	}
-	// Metadata must be present
-	if !strings.Contains(got, "exit:0") {
-		t.Errorf("missing exit code: %q", got)
-	}
-	if !strings.Contains(got, "[recon]") {
-		t.Errorf("missing tag: %q", got)
-	}
+	// Note exists, so only note is shown as metadata
 	if !strings.Contains(got, "# scan") {
 		t.Errorf("missing note: %q", got)
+	}
+	if strings.Contains(got, "exit:0") {
+		t.Errorf("should not have exit code when note exists: %q", got)
 	}
 	// Total visible width must not exceed 60
 	if len([]rune(got)) > 60 {

@@ -121,36 +121,40 @@ func FmtCompact(entry Entry, width int) string {
 	cmd = strings.ReplaceAll(cmd, "\n", " ")
 
 	// Build metadata suffix
-	exitCode := getInt(entry, "exit", -1)
-	var exitStr string
-	if exitCode == 0 {
-		exitStr = Colorize(fmt.Sprintf("exit:%d", exitCode), Green)
-	} else {
-		exitStr = Colorize(fmt.Sprintf("exit:%d", exitCode), Red)
-	}
-
-	dur := getFloat(entry, "dur", 0)
-	durStr := Colorize(fmt.Sprintf("%gs", dur), Dim)
-
-	tag := getString(entry, "tag", "")
-	tagStr := ""
-	if tag != "" {
-		tagStr = "  " + Colorize(fmt.Sprintf("[%s]", tag), Yellow)
+	// exit(8) + "  " + dur(6) = 16 fixed chars before tag/note
+	outIndicator := "       " // 7 spaces: same width as "[+out] "
+	if out, _ := entry["out"].(string); out != "" {
+		outIndicator = Colorize("[+out]", Dim) + " "
 	}
 
 	note := getString(entry, "note", "")
-	noteStr := ""
+	var meta string
 	if note != "" {
-		note = truncateText(note, 15)
-		noteStr = "  # " + note
-	}
+		// Note replaces exit+dur+tag, left-aligned to exit column, [+out] stays
+		noteText := "# " + truncateText(note, 15)
+		meta = fmt.Sprintf("%-18s", noteText) + outIndicator
+	} else {
+		// No note: show full metadata
+		exitCode := getInt(entry, "exit", -1)
+		exitRaw := fmt.Sprintf("%-8s", fmt.Sprintf("exit:%d", exitCode))
+		var exitStr string
+		if exitCode == 0 {
+			exitStr = Colorize(exitRaw, Green)
+		} else {
+			exitStr = Colorize(exitRaw, Red)
+		}
 
-	outIndicator := ""
-	if out, _ := entry["out"].(string); out != "" {
-		outIndicator = "  " + Colorize("[+out]", Dim)
-	}
+		dur := getFloat(entry, "dur", 0)
+		durStr := Colorize(fmt.Sprintf("%-6s", fmt.Sprintf("%gs", dur)), Dim)
 
-	meta := exitStr + "  " + durStr + tagStr + noteStr + outIndicator
+		tag := getString(entry, "tag", "")
+		tagStr := ""
+		if tag != "" {
+			tagStr = "  " + Colorize(fmt.Sprintf("[%s]", tag), Yellow)
+		}
+
+		meta = exitStr + "  " + durStr + tagStr + "  " + outIndicator
+	}
 	metaWidth := visibleLen(meta)
 
 	// Command width budget: total - timestamp(10) - gutter(2) - metadata
