@@ -30,7 +30,17 @@ Use `$HOME` instead of hardcoded home path for portability when the path is unde
 
 ### Integration with setupShellRc
 
-Pass the resolved Go bin dir and a flag into `setupShellRc`. Detect existing Go bin PATH exports (same approach as the `~/.local/bin` detection) and skip if already present.
+Add a new `goBinExportLine string` parameter to `setupShellRc`. When non-empty, the function scans for and inserts the Go bin PATH export. This is mutually exclusive with `addPathExport` (the `~/.local/bin` flag) — `installGoInstall` always sets `addPathExport = false`.
+
+Detection of "already present": match lines where the non-commented, trimmed line equals the exact export line produced by `resolveGoBinDir`. This is the same literal-match approach used for `~/.local/bin`. If the user added Go bin to PATH through other means (e.g., system-level `/etc/profile.d/`), a redundant export may be added — this is harmless and accepted.
+
+### Uninstall cleanup
+
+`uninstallCleanShellRc` in `cmd/uninstall.go` must also remove Go bin PATH export lines. Match any of:
+- `export PATH="$HOME/go/bin:$PATH"`
+- Any line matching `export PATH="` + resolved Go bin dir + `:$PATH"`
+
+This ensures `rtlog uninstall` doesn't leave orphaned exports.
 
 ### Output
 
@@ -39,13 +49,14 @@ Pass the resolved Go bin dir and a flag into `setupShellRc`. Detect existing Go 
 
 ## Scope
 
-- Only `cmd/setup.go` is modified
-- No new files
+- `cmd/setup.go` — main changes
+- `cmd/uninstall.go` — cleanup of Go bin PATH exports
 - `installDefault`, `installCustom`, `installFresh` paths are untouched
 - Existing `~/.local/bin` PATH logic stays as-is
 
 ## Affected code
 
-- `runSetup()`: Pass Go bin path info into the `installGoInstall` case
-- `setupShellRc()`: Add detection/insertion of Go bin PATH export
-- New helper: `resolveGoBinDir(home string) (dir string, exportLine string)` to compute the directory and the portable export line
+- `runSetup()`: Call `resolveGoBinDir` in the `installGoInstall` case, pass result to `setupShellRc`
+- `setupShellRc()`: New `goBinExportLine string` parameter; detect/insert Go bin PATH export
+- `uninstallCleanShellRc()`: Match and remove Go bin PATH export lines
+- New helper: `resolveGoBinDir(home string) (dir string, exportLine string)` to compute the directory and the portable export line. If path is not under `$HOME`, uses absolute path directly.
