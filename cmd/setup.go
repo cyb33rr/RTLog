@@ -620,7 +620,7 @@ func isGoInstalled(binPath, gopath, gobin string) bool {
 // resolveGoBinDir returns the Go bin directory and a portable PATH export line.
 // It checks GOBIN first, then GOPATH/bin, then ~/go/bin.
 // Paths under home use $HOME for portability; paths outside use absolute paths.
-func resolveGoBinDir(home, gobin, gopath string) (dir string, exportLine string) {
+func resolveGoBinDir(home, gopath, gobin string) (dir string, exportLine string) {
 	if gobin != "" {
 		dir = gobin
 	} else if gopath != "" {

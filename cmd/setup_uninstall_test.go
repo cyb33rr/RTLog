@@ -491,7 +491,7 @@ func TestResolveGoBinDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotDir, gotExport := resolveGoBinDir(home, tt.gobin, tt.gopath)
+			gotDir, gotExport := resolveGoBinDir(home, tt.gopath, tt.gobin)
 			if gotDir != tt.wantDir {
 				t.Errorf("dir = %q, want %q", gotDir, tt.wantDir)
 			}
