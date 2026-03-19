@@ -70,8 +70,8 @@ func FmtEntry(entry Entry, index, idxWidth int, showOutIndicator ...bool) string
 }
 
 // FmtEntryHighlight formats an entry then highlights pattern matches.
-func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int) string {
-	line := FmtEntry(entry, index, idxWidth)
+func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int, showOutIndicator ...bool) string {
+	line := FmtEntry(entry, index, idxWidth, showOutIndicator...)
 	if pattern == nil {
 		return line
 	}
