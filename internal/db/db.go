@@ -132,16 +132,16 @@ func (d *DB) LoadByDate(dateStr string) ([]logfile.LogEntry, error) {
 	)
 }
 
-// Search returns entries matching the keyword across cmd, tool, cwd, tag, note, user, host fields.
+// Search returns entries matching the keyword across cmd, tool, cwd, tag, and note fields.
 func (d *DB) Search(keyword string) ([]logfile.LogEntry, error) {
 	pattern := "%" + keyword + "%"
 	return d.queryEntries(
 		`SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out
 		 FROM entries
 		 WHERE cmd  LIKE ? OR tool LIKE ? OR cwd  LIKE ?
-		    OR tag  LIKE ? OR note LIKE ? OR user LIKE ? OR host LIKE ?
+		    OR tag  LIKE ? OR note LIKE ?
 		 ORDER BY id ASC`,
-		pattern, pattern, pattern, pattern, pattern, pattern, pattern,
+		pattern, pattern, pattern, pattern, pattern,
 	)
 }
 

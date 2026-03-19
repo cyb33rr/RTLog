@@ -227,11 +227,12 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-func TestSearchUser(t *testing.T) {
+func TestSearchDoesNotMatchUserHost(t *testing.T) {
 	d := openTestDB(t)
 
 	e1 := sampleEntry(0)
 	e1.User = "alice"
+	e1.Host = "specialhost"
 	e2 := sampleEntry(1)
 	e2.User = "bob"
 
@@ -241,15 +242,22 @@ func TestSearchUser(t *testing.T) {
 		}
 	}
 
+	// Search by user should NOT match (user field excluded).
 	entries, err := d.Search("alice")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("got %d entries for 'alice', want 1", len(entries))
+	if len(entries) != 0 {
+		t.Fatalf("got %d entries for 'alice', want 0 (user field not searched)", len(entries))
 	}
-	if entries[0].User != "alice" {
-		t.Errorf("User = %q, want %q", entries[0].User, "alice")
+
+	// Search by host should NOT match (host field excluded).
+	entries, err = d.Search("specialhost")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("got %d entries for 'specialhost', want 0 (host field not searched)", len(entries))
 	}
 }
 
