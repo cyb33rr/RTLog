@@ -9,7 +9,7 @@ A CLI tool that automatically captures and logs shell commands during penetratio
 - **Phase tagging** — annotate commands with operational phases (`recon`, `exploitation`, `privesc`, etc.)
 - **Output capture** — optionally capture full stdout/stderr for each command
 - **Target extraction** — automatically extract IPs, CIDRs, hostnames, ports, and credentials from logged commands with tool-aware parsing to avoid false positives
-- **Search & analysis** — search logs, view timelines, get tool usage stats
+- **Search & analysis** — filter and search logs, view timelines, get tool usage stats
 - **Export** — generate Markdown or CSV reports
 - **SQLite storage** — logs stored in per-engagement SQLite databases with WAL mode for concurrent access
 - **JSONL import** — migrate legacy JSONL logs to SQLite with deduplication
@@ -100,8 +100,9 @@ rtlog show               # Interactive selector (navigate with ↑/↓, Enter to
 rtlog show --today       # Today's entries only
 rtlog show --date 2026-01-15
 rtlog show -a            # Print all entries with output (non-interactive)
+rtlog show nmap          # Search entries matching keyword (non-interactive)
+rtlog show --today nmap  # Search within today's entries
 rtlog show -e <name>     # Show a different engagement
-rtlog search <keyword>   # Case-insensitive search with highlighting
 ```
 
 ### Analysis
