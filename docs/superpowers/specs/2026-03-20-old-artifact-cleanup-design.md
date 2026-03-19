@@ -61,7 +61,11 @@ export PATH="$HOME/go/bin:$PATH"  # added by rtlog
 
 This way uninstall can safely identify and remove the exact line RTLog created, regardless of GOBIN/GOPATH changes between setup and uninstall.
 
-**Migration:** Existing installs have the untagged export line. `setupShellRc()` should detect the old untagged line (matching the resolved export pattern without the tag) and replace it with the tagged version. Uninstall retains the hardcoded default removal (`export PATH="$HOME/go/bin:$PATH"` without tag) as a backward-compat fallback for installs that never ran the updated setup.
+**Migration:** Existing installs have the untagged export line. `setupShellRc()` should detect the old untagged line by matching any line whose trimmed content equals the resolved `goBinExportLine` (without the tag suffix). When found, replace it in-place with the tagged version. The existing "already present" check must match both the tagged and untagged forms to avoid appending a duplicate.
+
+Uninstall retains the hardcoded default removal (`export PATH="$HOME/go/bin:$PATH"` without tag) as a backward-compat fallback for installs that never ran the updated setup.
+
+**Tests to update:** Both `TestUninstallCleansCustomGoBinExport` and `TestSetupShellRcGoBinExportAlreadyPresent` must be updated to reflect the tagged behavior.
 
 ### Fix 4: Clean orphan temp files during setup
 
@@ -76,18 +80,18 @@ This runs only during `rtlog setup` / `rtlog update`, not on every shell open. R
 Change `hook.zsh` and `hook.bash` to not pre-create the temp file at shell startup. Instead:
 
 1. Initialize `_rtlog_tmpfile=""` (empty) at source time
-2. In preexec, create via `mktemp` only when capture is needed and the var is empty
+2. In preexec, create via `mktemp` when capture is needed and the var is empty. Remove the existing `: > "$_rtlog_tmpfile"` truncation line — `mktemp` already creates a fresh empty file, and truncating an empty-string path is a no-op in zsh but creates a literal empty-named file in bash.
 3. In precmd, delete the file and reset the var to empty
 
 State transitions per matched command:
 - Shell start: `_rtlog_tmpfile=""`
-- preexec (matched tool, capture=1): `_rtlog_tmpfile=$(mktemp ...)`
+- preexec (matched tool, capture=1): `_rtlog_tmpfile=$(mktemp ...)`, then exec tee
 - precmd: `rm -f "$_rtlog_tmpfile"; _rtlog_tmpfile=""`
 - Next preexec: creates fresh `mktemp` again
 
 This eliminates the primary leak (shells that never match a tool). A residual leak remains if a shell is killed between preexec and precmd (e.g., SIGKILL, terminal crash), but this is strictly better than the current always-leak behavior, and Fix 4 handles these residual files during the next `rtlog setup` or `rtlog update`. Together, Fix 4 + Fix 5 form the complete solution.
 
-Non-interactive hooks are unchanged (they clean up in EXIT traps and only exist for the lifetime of the script).
+**Non-interactive hooks:** The zsh variant (`hook-noninteractive.zsh`) only sets a path string (`/tmp/.rtlog_ni_out.$$`) without creating a file, so it doesn't leak. However, the bash variant (`hook-noninteractive.bash`) eagerly creates a temp file via `mktemp` at source time, and the EXIT handler only cleans it if a tool was matched. Apply the same on-demand pattern: set the path to empty at source, create via `mktemp` only when a tool matches in the DEBUG handler, and add an unconditional `rm -f` at the top of the EXIT handler before the pending-tool check.
 
 ## Files Changed
 
@@ -95,6 +99,7 @@ Non-interactive hooks are unchanged (they clean up in EXIT traps and only exist 
 - `cmd/uninstall.go` — `uninstallCleanShellRc()` repo-based line removal + tagged export line matching
 - `hook.zsh` — on-demand temp file creation
 - `hook.bash` — on-demand temp file creation
+- `hook-noninteractive.bash` — on-demand temp file creation
 
 ## Testing
 
@@ -104,5 +109,5 @@ Non-interactive hooks are unchanged (they clean up in EXIT traps and only exist 
   - Tagged export line written by setup
   - Tagged export line removed by uninstall
   - Untagged default export line still removed by uninstall (backward compat)
-  - Update existing `TestUninstallCleansCustomGoBinExport` to reflect tagged behavior
+  - Update existing `TestUninstallCleansCustomGoBinExport` and `TestSetupShellRcGoBinExportAlreadyPresent` to reflect tagged behavior
 - Manual verification for hook changes (Fix 5): source `hook.zsh`, verify `_rtlog_tmpfile` is empty, run a matched tool, verify temp file is created in preexec, verify it is deleted in precmd and var reset to empty.
