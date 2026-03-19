@@ -100,6 +100,47 @@ func PrintOutputBlock(entry Entry, stripAnsi bool) {
 	fmt.Println()
 }
 
+// FmtCompact formats an entry as a compact single line for the Atuin-style TUI.
+// Format: HH:MM:SS  cmd  exit:N  Ns  [tag]  # note  [+out]
+// No index number, no separate tool name.
+func FmtCompact(entry Entry) string {
+	tsRaw, _ := entry["ts"].(string)
+	tsStr := formatTimestamp(tsRaw)
+
+	cmd := getString(entry, "cmd", "")
+	cmd = strings.ReplaceAll(cmd, "\n", " ")
+
+	exitCode := getInt(entry, "exit", -1)
+	var exitStr string
+	if exitCode == 0 {
+		exitStr = Colorize(fmt.Sprintf("exit:%d", exitCode), Green)
+	} else {
+		exitStr = Colorize(fmt.Sprintf("exit:%d", exitCode), Red)
+	}
+
+	dur := getFloat(entry, "dur", 0)
+	durStr := Colorize(fmt.Sprintf("%gs", dur), Dim)
+
+	tag := getString(entry, "tag", "")
+	tagStr := ""
+	if tag != "" {
+		tagStr = "  " + Colorize(fmt.Sprintf("[%s]", tag), Yellow)
+	}
+
+	note := getString(entry, "note", "")
+	noteStr := ""
+	if note != "" {
+		noteStr = "  # " + note
+	}
+
+	outIndicator := ""
+	if out, _ := entry["out"].(string); out != "" {
+		outIndicator = "  " + Colorize("[+out]", Dim)
+	}
+
+	return fmt.Sprintf("%s  %s  %s  %s%s%s%s", tsStr, cmd, exitStr, durStr, tagStr, noteStr, outIndicator)
+}
+
 // formatTimestamp extracts HH:MM:SS from an ISO timestamp.
 func formatTimestamp(tsRaw string) string {
 	if tsRaw == "" {
