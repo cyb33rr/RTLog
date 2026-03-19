@@ -487,3 +487,58 @@ func TestReopenExistingDB(t *testing.T) {
 		t.Error("expected non-zero ID after reopen")
 	}
 }
+
+func TestSearchByDate(t *testing.T) {
+	d := openTestDB(t)
+
+	e1 := sampleEntry(0)
+	e1.Ts = "2025-01-15T10:00:00Z"
+	e1.Tool = "nmap"
+	e1.Cmd = "nmap -sV 10.0.0.1"
+
+	e2 := sampleEntry(1)
+	e2.Ts = "2025-01-16T11:00:00Z"
+	e2.Tool = "nmap"
+	e2.Cmd = "nmap -p- 10.0.0.2"
+
+	e3 := sampleEntry(2)
+	e3.Ts = "2025-01-15T12:00:00Z"
+	e3.Tool = "gobuster"
+	e3.Cmd = "gobuster dir -u http://target"
+
+	for _, e := range []logfile.LogEntry{e1, e2, e3} {
+		if err := d.Insert(e); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
+	}
+
+	// Search "nmap" on 2025-01-15: only e1 matches (e2 is wrong date).
+	entries, err := d.SearchByDate("nmap", "2025-01-15")
+	if err != nil {
+		t.Fatalf("SearchByDate: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Cmd != "nmap -sV 10.0.0.1" {
+		t.Errorf("Cmd = %q, want %q", entries[0].Cmd, "nmap -sV 10.0.0.1")
+	}
+
+	// Search "nmap" on 2025-01-16: only e2 matches.
+	entries2, err := d.SearchByDate("nmap", "2025-01-16")
+	if err != nil {
+		t.Fatalf("SearchByDate: %v", err)
+	}
+	if len(entries2) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries2))
+	}
+
+	// Search "gobuster" on 2025-01-16: no matches (gobuster is on 01-15).
+	entries3, err := d.SearchByDate("gobuster", "2025-01-16")
+	if err != nil {
+		t.Fatalf("SearchByDate: %v", err)
+	}
+	if len(entries3) != 0 {
+		t.Fatalf("got %d entries, want 0", len(entries3))
+	}
+}

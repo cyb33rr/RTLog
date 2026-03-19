@@ -145,6 +145,19 @@ func (d *DB) Search(keyword string) ([]logfile.LogEntry, error) {
 	)
 }
 
+// SearchByDate returns entries matching the keyword whose ts starts with dateStr.
+func (d *DB) SearchByDate(keyword, dateStr string) ([]logfile.LogEntry, error) {
+	pattern := "%" + keyword + "%"
+	return d.queryEntries(
+		`SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out
+		 FROM entries
+		 WHERE ts LIKE ?
+		   AND (cmd LIKE ? OR tool LIKE ? OR cwd LIKE ? OR tag LIKE ? OR note LIKE ?)
+		 ORDER BY id ASC`,
+		dateStr+"%", pattern, pattern, pattern, pattern, pattern,
+	)
+}
+
 // Count returns the total number of entries.
 func (d *DB) Count() (int, error) {
 	var count int
