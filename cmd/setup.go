@@ -62,7 +62,13 @@ func setupCore(home string) error {
 	// 2. Cleanup stale files
 	setupCleanup(rtDir)
 
-	// 3. Write embedded files
+	// 3. Migrate old installs
+	setupMigrateSymlink(
+		filepath.Join(home, ".local", "bin", "rtlog"),
+		filepath.Join(rtDir, "rtlog"),
+	)
+
+	// 4. Write embedded files
 	embeds := []struct {
 		name       string
 		dst        string
@@ -82,20 +88,20 @@ func setupCore(home string) error {
 		}
 	}
 
-	// 4. Resolve Go bin dir
+	// 5. Resolve Go bin dir
 	_, goBinExportLine := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
 
-	// 5. Configure shell rc files
+	// 6. Configure shell rc files
 	zshrcExists := fileExists(zshrc)
 	bashrcExists := fileExists(bashrc)
 
 	if zshrcExists {
-		if err := setupShellRc(zshrc, "", rtDir, false, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
+		if err := setupShellRc(zshrc, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
 			return err
 		}
 	}
 	if bashrcExists {
-		if err := setupShellRc(bashrc, "", rtDir, false, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
+		if err := setupShellRc(bashrc, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
 			return err
 		}
 	}
@@ -104,11 +110,11 @@ func setupCore(home string) error {
 		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
 	}
 
-	// 6. Configure .zshenv for non-interactive zsh capture
+	// 7. Configure .zshenv for non-interactive zsh capture
 	zshenv := filepath.Join(home, ".zshenv")
 	setupZshenv(zshenv, rtDir)
 
-	// 7. BASH_ENV for non-interactive bash capture
+	// 8. BASH_ENV for non-interactive bash capture
 	if zshrcExists {
 		setupBashEnv(zshrc, rtDir, ".zshrc")
 	}
@@ -172,7 +178,7 @@ func setupCreateDir(dir string) error {
 }
 
 // setupCleanup deletes stale application-managed files from rtDir.
-// Preserved: logs/, state, tools.conf, extract.conf, rtlog binary.
+// Preserved: logs/, state, tools.conf, extract.conf.
 func setupCleanup(rtDir string) {
 	denylist := []string{
 		"hook.zsh",
@@ -182,6 +188,7 @@ func setupCleanup(rtDir string) {
 		"bash-preexec.sh",
 		"last-update-check",
 		"update-available",
+		"rtlog",
 	}
 	for _, name := range denylist {
 		path := filepath.Join(rtDir, name)
@@ -189,6 +196,23 @@ func setupCleanup(rtDir string) {
 			fmt.Printf("[~]  Cleaned up: %s\n", name)
 		}
 	}
+}
+
+// setupMigrateSymlink removes a symlink at link if it points to expectedTarget.
+// Non-matching symlinks and regular files are left alone.
+func setupMigrateSymlink(link, expectedTarget string) {
+	target, err := os.Readlink(link)
+	if err != nil {
+		return // not a symlink or doesn't exist
+	}
+	if target != expectedTarget {
+		return // points elsewhere, leave it alone
+	}
+	if err := os.Remove(link); err != nil {
+		fmt.Fprintf(os.Stderr, "[!]  Failed to remove old symlink %s: %v\n", link, err)
+		return
+	}
+	fmt.Printf("[~]  Removed old symlink: %s\n", link)
 }
 
 // setupWriteEmbedded writes an embedded file to dst, skipping if identical.
@@ -407,12 +431,11 @@ func detectBinaryPath(home string) (installKind, string) {
 	return installCustom, resolved
 }
 
-// setupShellRc ensures PATH and hook source lines are in the given rc file.
+// setupShellRc ensures hook source line and optional Go bin PATH export are in the given rc file.
 // hookFile is "hook.zsh" or "hook.bash". rcName is ".zshrc" or ".bashrc" (for messages).
-func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExportLine, hookFile, rcName string) error {
+func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 	sourceLine := fmt.Sprintf("source %s/.rt/%s", "$HOME", hookFile)
 
-	// Read existing content
 	content, err := os.ReadFile(rcFile)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot read %s: %w", rcFile, err)
@@ -420,16 +443,17 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExpor
 
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
-	hasPathExport := false
 	hasSourceLine := false
 	hasGoBinExport := false
+	migrated := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Check for existing PATH export (exclude commented lines)
-		if !strings.HasPrefix(trimmed, "#") && strings.HasPrefix(trimmed, `export PATH="$HOME/.local/bin`) {
-			hasPathExport = true
+		// Migration: remove old ~/.local/bin PATH export
+		if !strings.HasPrefix(trimmed, "#") && trimmed == `export PATH="$HOME/.local/bin:$PATH"` {
+			migrated = true
+			continue
 		}
 
 		// Check for our source line
@@ -445,16 +469,9 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExpor
 		newLines = append(newLines, line)
 	}
 
-	// Append PATH export if missing and needed (only when symlink was created)
-	if addPathExport {
-		if !hasPathExport {
-			newLines = append(newLines, "", `export PATH="$HOME/.local/bin:$PATH"`)
-			fmt.Printf("[+]  Added %s to PATH in %s\n", localBin, rcName)
-		} else {
-			fmt.Printf("[ok] %s already in PATH\n", localBin)
-		}
-	} else if goBinExportLine == "" {
-		fmt.Printf("[ok] Binary on PATH, skipping PATH export in %s\n", rcName)
+	if migrated {
+		newLines = collapseBlankLines(newLines)
+		fmt.Printf("[~]  Removed old ~/.local/bin PATH export from %s\n", rcName)
 	}
 
 	// Append Go bin PATH export if needed
@@ -493,7 +510,6 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExpor
 		tmp.Close()
 		return fmt.Errorf("failed to write %s: %w", rcName, err)
 	}
-	// Preserve original permissions
 	if info, err := os.Stat(rcFile); err == nil {
 		tmp.Chmod(info.Mode())
 	} else {

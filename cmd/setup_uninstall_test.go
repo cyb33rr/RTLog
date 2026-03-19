@@ -224,7 +224,7 @@ func TestSetupShellRcBash(t *testing.T) {
 	// Create an existing .bashrc
 	os.WriteFile(bashrc, []byte("# my bash config\n"), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "", "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -249,7 +249,7 @@ func TestSetupShellRcIdempotent(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "", "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -265,6 +265,7 @@ func TestSetupCleanup(t *testing.T) {
 		"hook.zsh", "hook.bash",
 		"hook-noninteractive.zsh", "hook-noninteractive.bash",
 		"bash-preexec.sh", "last-update-check", "update-available",
+		"rtlog",
 	}
 	for _, name := range denylist {
 		os.WriteFile(filepath.Join(rtDir, name), []byte("old"), 0644)
@@ -276,7 +277,6 @@ func TestSetupCleanup(t *testing.T) {
 	os.WriteFile(filepath.Join(rtDir, "state"), []byte("engagement=test\n"), 0644)
 	os.WriteFile(filepath.Join(rtDir, "tools.conf"), []byte("nmap\n"), 0644)
 	os.WriteFile(filepath.Join(rtDir, "extract.conf"), []byte("nmap positional\n"), 0644)
-	os.WriteFile(filepath.Join(rtDir, "rtlog"), []byte("binary"), 0755)
 
 	setupCleanup(rtDir)
 
@@ -288,7 +288,7 @@ func TestSetupCleanup(t *testing.T) {
 	}
 
 	// Preserved files should exist
-	for _, name := range []string{"state", "tools.conf", "extract.conf", "rtlog"} {
+	for _, name := range []string{"state", "tools.conf", "extract.conf"} {
 		if _, err := os.Stat(filepath.Join(rtDir, name)); err != nil {
 			t.Errorf("preserved file %s was deleted: %v", name, err)
 		}
@@ -440,8 +440,7 @@ func TestSetupShellRcGoBinExport(t *testing.T) {
 	bashrc := filepath.Join(tmp, ".bashrc")
 	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
-		false, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -466,8 +465,7 @@ func TestSetupShellRcGoBinExportAlreadyPresent(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
-		false, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -481,8 +479,7 @@ func TestSetupShellRcNoGoBinExport(t *testing.T) {
 	bashrc := filepath.Join(tmp, ".bashrc")
 	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
-		false, "", "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if strings.Contains(string(result), "go/bin") {
@@ -612,5 +609,83 @@ func TestResolveGoBinDir(t *testing.T) {
 				t.Errorf("export = %q, want %q", gotExport, tt.wantExport)
 			}
 		})
+	}
+}
+
+func TestSetupMigrateSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	localBin := filepath.Join(tmp, ".local", "bin")
+	os.MkdirAll(localBin, 0755)
+	rtBinary := filepath.Join(tmp, ".rt", "rtlog")
+
+	link := filepath.Join(localBin, "rtlog")
+	os.Symlink(rtBinary, link)
+
+	setupMigrateSymlink(link, rtBinary)
+
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("symlink was not removed")
+	}
+}
+
+func TestSetupMigrateSymlink_NonMatching(t *testing.T) {
+	tmp := t.TempDir()
+	localBin := filepath.Join(tmp, ".local", "bin")
+	os.MkdirAll(localBin, 0755)
+
+	link := filepath.Join(localBin, "rtlog")
+	os.Symlink("/usr/local/bin/rtlog", link)
+
+	setupMigrateSymlink(link, filepath.Join(tmp, ".rt", "rtlog"))
+
+	if _, err := os.Lstat(link); err != nil {
+		t.Error("non-matching symlink was incorrectly removed")
+	}
+}
+
+func TestSetupMigrateSymlink_RegularFile(t *testing.T) {
+	tmp := t.TempDir()
+	localBin := filepath.Join(tmp, ".local", "bin")
+	os.MkdirAll(localBin, 0755)
+
+	file := filepath.Join(localBin, "rtlog")
+	os.WriteFile(file, []byte("binary"), 0755)
+
+	setupMigrateSymlink(file, filepath.Join(tmp, ".rt", "rtlog"))
+
+	if _, err := os.Stat(file); err != nil {
+		t.Error("regular file was incorrectly removed")
+	}
+}
+
+func TestSetupMigrateSymlink_NotExists(t *testing.T) {
+	setupMigrateSymlink("/nonexistent/path", "/also/nonexistent")
+}
+
+func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/.local/bin:$PATH"`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(content), 0644)
+
+	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if strings.Contains(lines, `$HOME/.local/bin`) {
+		t.Error("old ~/.local/bin PATH export was not removed")
+	}
+	if !strings.Contains(lines, `$HOME/go/bin`) {
+		t.Error("Go bin PATH export not added")
+	}
+	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
+		t.Error("hook source line was removed")
 	}
 }
