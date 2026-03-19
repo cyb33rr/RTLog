@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/cyb33rr/rtlog/internal/display"
@@ -16,9 +17,10 @@ var showDate string
 var showOutput bool
 
 var showCmd = &cobra.Command{
-	Use:   "show",
+	Use:   "show [keyword]",
 	Short: "Pretty-print log entries",
-	Long:  "Display log entries in a human-readable format, optionally filtered by date.",
+	Long:  "Display log entries in a human-readable format, optionally filtered by date.\nWith a keyword argument, performs a non-interactive search with highlighting.",
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Validate date flag early
 		if showDate != "" {
@@ -40,6 +42,69 @@ var showCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer d.Close()
+
+		engName := logfile.EngagementName(path)
+		keyword := ""
+		if len(args) > 0 {
+			keyword = args[0]
+		}
+
+		// --- Keyword search branch ---
+		if keyword != "" {
+			var dateLabel string
+			var matches []logfile.LogEntry
+			if showDate != "" {
+				matches, err = d.SearchByDate(keyword, showDate)
+				dateLabel = showDate
+			} else if showToday {
+				today := time.Now().UTC().Format("2006-01-02")
+				matches, err = d.SearchByDate(keyword, today)
+				dateLabel = today
+			} else {
+				matches, err = d.Search(keyword)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error searching entries: %v\n", err)
+				os.Exit(1)
+			}
+
+			if len(matches) == 0 {
+				label := ""
+				if dateLabel != "" {
+					label = fmt.Sprintf(" for %s", dateLabel)
+				}
+				fmt.Printf("No matches for '%s'%s in %s\n", keyword, label, engName)
+				return
+			}
+
+			header := fmt.Sprintf("--- %d match(es) for '%s' in %s ---", len(matches), keyword, engName)
+			if dateLabel != "" {
+				header += fmt.Sprintf("  [%s]", dateLabel)
+			}
+			fmt.Println(display.Colorize(header, display.Bold))
+			fmt.Println()
+
+			pattern := regexp.MustCompile("(?i)" + regexp.QuoteMeta(keyword))
+			idxWidth := len(fmt.Sprintf("%d", len(matches)))
+			for i, entry := range matches {
+				m := logfile.ToMap(entry)
+				if showOutput {
+					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth, false))
+					display.PrintOutputBlock(m, true)
+				} else {
+					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth))
+				}
+			}
+
+			fmt.Println()
+			fmt.Printf("%s\n", display.Colorize(
+				fmt.Sprintf("%d result(s)", len(matches)),
+				display.Dim,
+			))
+			return
+		}
+
+		// --- No keyword: existing show behavior ---
 		var dateLabel string
 		var entries []logfile.LogEntry
 		if showDate != "" {
@@ -62,7 +127,7 @@ var showCmd = &cobra.Command{
 			if dateLabel != "" {
 				label = fmt.Sprintf(" for %s", dateLabel)
 			}
-			fmt.Printf("No entries found%s in %s\n", label, logfile.EngagementName(path))
+			fmt.Printf("No entries found%s in %s\n", label, engName)
 			return
 		}
 
@@ -77,7 +142,7 @@ var showCmd = &cobra.Command{
 			for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
 				entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
 			}
-			header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
+			header := fmt.Sprintf("--- %s ---", engName)
 			if dateLabel != "" {
 				header += fmt.Sprintf("  [%s]", dateLabel)
 			}
@@ -102,7 +167,7 @@ var showCmd = &cobra.Command{
 			for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
 				entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
 			}
-			header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
+			header := fmt.Sprintf("--- %s ---", engName)
 			if dateLabel != "" {
 				header += fmt.Sprintf("  [%s]", dateLabel)
 			}
