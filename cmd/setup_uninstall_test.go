@@ -411,3 +411,26 @@ func TestDetectBinaryPath_GoInstall(t *testing.T) {
 		t.Errorf("expected %q, got %q", binPath, resolved)
 	}
 }
+
+func TestSetupCopySelfTo_PermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("test requires non-root user")
+	}
+	tmp := t.TempDir()
+
+	// Create a read-only directory — writing will fail with permission error
+	roDir := filepath.Join(tmp, "readonly")
+	os.MkdirAll(roDir, 0755)
+	dst := filepath.Join(roDir, "rtlog")
+	// Make dir read-only after creating it
+	os.Chmod(roDir, 0555)
+	defer os.Chmod(roDir, 0755)
+
+	err := setupCopySelfTo(dst)
+	if err == nil {
+		t.Error("expected permission error, got nil")
+	}
+	if !os.IsPermission(err) {
+		t.Errorf("expected permission error, got: %v", err)
+	}
+}
