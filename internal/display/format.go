@@ -182,3 +182,20 @@ func getFloat(entry Entry, key string, def float64) float64 {
 	}
 	return def
 }
+
+// visibleLen returns the number of visible runes in s, excluding ANSI escape sequences.
+func visibleLen(s string) int {
+	return len([]rune(RE_ANSI.ReplaceAllString(s, "")))
+}
+
+// truncateText truncates plain text (no ANSI) to max visible runes, appending "…" if truncated.
+func truncateText(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	if max <= 0 {
+		return "…"
+	}
+	return string(runes[:max-1]) + "…"
+}

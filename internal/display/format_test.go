@@ -111,3 +111,50 @@ func TestFmtCompactMissingTimestamp(t *testing.T) {
 		t.Errorf("command missing from output: %q", got)
 	}
 }
+
+func TestTruncateText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		max  int
+		want string
+	}{
+		{"fits", "hello", 10, "hello"},
+		{"exact", "hello", 5, "hello"},
+		{"truncated", "hello world", 5, "hell…"},
+		{"one_char", "hello", 1, "…"},
+		{"zero", "hello", 0, "…"},
+		{"empty", "", 5, ""},
+		{"unicode", "café latte", 6, "café …"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateText(tt.in, tt.max)
+			if got != tt.want {
+				t.Errorf("truncateText(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVisibleLen(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"plain", "hello", 5},
+		{"empty", "", 0},
+		{"with_ansi", "\033[32mhello\033[0m", 5},
+		{"nested_ansi", "\033[32mexit:0\033[0m  \033[2m8.1s\033[0m", 12},
+		{"no_visible", "\033[0m", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := visibleLen(tt.in)
+			if got != tt.want {
+				t.Errorf("visibleLen(%q) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
