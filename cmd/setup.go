@@ -5,9 +5,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -266,107 +264,6 @@ func setupWriteEmbedded(name, dst string, userConfig bool) error {
 	return nil
 }
 
-// setupCopySelfTo copies the running binary to dst using atomic temp+rename.
-// Returns an error instead of exiting, so callers can handle permission errors.
-func setupCopySelfTo(dst string) error {
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("cannot determine own path: %w", err)
-	}
-	self, err = filepath.EvalSymlinks(self)
-	if err != nil {
-		return fmt.Errorf("cannot resolve own path: %w", err)
-	}
-
-	// If we're already at the destination, skip
-	absDst, _ := filepath.Abs(dst)
-	if self == absDst {
-		fmt.Printf("[ok] Binary already at %s\n", dst)
-		return nil
-	}
-
-	// Check if existing binary is identical
-	selfInfo, err := os.Stat(self)
-	if err == nil {
-		dstInfo, derr := os.Stat(dst)
-		if derr == nil && selfInfo.Size() == dstInfo.Size() {
-			selfData, e1 := os.ReadFile(self)
-			dstData, e2 := os.ReadFile(dst)
-			if e1 == nil && e2 == nil && bytes.Equal(selfData, dstData) {
-				fmt.Printf("[ok] Binary is up to date: %s\n", dst)
-				return nil
-			}
-		}
-	}
-
-	// Atomic copy: write to temp + rename
-	dir := filepath.Dir(dst)
-	tmp, err := os.CreateTemp(dir, ".rtlog.")
-	if err != nil {
-		if os.IsPermission(err) {
-			return err
-		}
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	src, err := os.Open(self)
-	if err != nil {
-		tmp.Close()
-		return fmt.Errorf("cannot open self: %w", err)
-	}
-	defer src.Close()
-
-	if _, err := io.Copy(tmp, src); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to copy binary: %w", err)
-	}
-	if err := tmp.Chmod(0755); err != nil {
-		tmp.Close()
-		return fmt.Errorf("failed to set permissions: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
-	}
-	if err := os.Rename(tmpName, dst); err != nil {
-		if os.IsPermission(err) {
-			return err
-		}
-		return fmt.Errorf("failed to install binary: %w", err)
-	}
-	fmt.Printf("[+]  Installed binary: %s\n", dst)
-	return nil
-}
-
-// setupSymlink creates or updates a symlink.
-// Returns true if the symlink is in place, false if blocked by a regular file.
-func setupSymlink(link, target string) bool {
-	updated := false
-	if existing, err := os.Readlink(link); err == nil {
-		if existing == target {
-			fmt.Printf("[ok] Symlink exists: %s -> %s\n", link, target)
-			return true
-		}
-		os.Remove(link)
-		updated = true
-	} else if _, err := os.Stat(link); err == nil {
-		fmt.Printf("[!]  %s exists but is not a symlink, skipping\n", link)
-		return false
-	}
-
-	if err := os.Symlink(target, link); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to create symlink: %v\n", err)
-		os.Exit(1)
-	}
-	if updated {
-		fmt.Printf("[+]  Updated symlink: %s -> %s\n", link, target)
-	} else {
-		fmt.Printf("[+]  Created symlink: %s -> %s\n", link, target)
-	}
-	return true
-}
-
 // collapseBlankLines reduces consecutive blank lines to a single blank line.
 func collapseBlankLines(lines []string) []string {
 	out := make([]string, 0, len(lines))
@@ -386,49 +283,6 @@ func collapseBlankLines(lines []string) []string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
-}
-
-// installKind classifies how rtlog is installed.
-type installKind int
-
-const (
-	installFresh     installKind = iota // not found on PATH
-	installDefault                      // found at ~/.rt/rtlog (directly or via symlink)
-	installCustom                       // found on PATH at a non-default location
-	installGoInstall                    // found inside GOPATH/bin or GOBIN
-)
-
-// detectBinaryPath finds rtlog on PATH and classifies the install type.
-// Returns the kind and the resolved (real) path to the binary.
-// For installFresh, the path is empty.
-func detectBinaryPath(home string) (installKind, string) {
-	found, err := exec.LookPath("rtlog")
-	if err != nil {
-		return installFresh, ""
-	}
-
-	resolved, err := filepath.EvalSymlinks(found)
-	if err != nil {
-		return installFresh, ""
-	}
-
-	// Check go install first (highest priority)
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		gopath = filepath.Join(home, "go")
-	}
-	gobin := os.Getenv("GOBIN")
-	if isGoInstalled(resolved, gopath, gobin) {
-		return installGoInstall, resolved
-	}
-
-	// Check if it resolves to the default ~/.rt/rtlog
-	defaultBin := filepath.Join(home, ".rt", "rtlog")
-	if resolved == defaultBin {
-		return installDefault, resolved
-	}
-
-	return installCustom, resolved
 }
 
 // setupShellRc ensures hook source line and optional Go bin PATH export are in the given rc file.
@@ -626,19 +480,6 @@ func setupBashEnv(rcFile, rtDir, rcName string) {
 	tmp.Close()
 	os.Rename(tmpName, rcFile)
 	fmt.Printf("[+]  Added BASH_ENV export to %s\n", rcName)
-}
-
-// isGoInstalled checks if the binary path is inside GOPATH/bin or GOBIN.
-func isGoInstalled(binPath, gopath, gobin string) bool {
-	if gobin != "" && filepath.Dir(binPath) == gobin {
-		return true
-	}
-	if gopath != "" {
-		if filepath.Dir(binPath) == filepath.Join(gopath, "bin") {
-			return true
-		}
-	}
-	return false
 }
 
 // resolveGoBinDir returns the Go bin directory and a portable PATH export line.
