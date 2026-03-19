@@ -564,3 +564,68 @@ func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
 		t.Error("hook source line was removed")
 	}
 }
+
+func TestSetupShellRcMigratesRepoSourceLines(t *testing.T) {
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		"source ~/code/rtlog/hook.zsh",
+		"source /opt/python-hook/hook.zsh",
+		"source $HOME/.rt/hook.zsh",
+		"alias ll='ls -la'",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	setupShellRc(zshrc, "", "hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	// Old repo-based lines should be removed
+	// Note: "rtlog/hook.zsh" is distinct from ".rt/hook.zsh" so no guard needed
+	if strings.Contains(lines, "rtlog/hook.zsh") {
+		t.Error("repo-based rtlog source line was not removed")
+	}
+	if strings.Contains(lines, "python-hook/hook.zsh") {
+		t.Error("python-hook source line was not removed")
+	}
+	// Canonical source line should survive
+	if !strings.Contains(lines, "source $HOME/.rt/hook.zsh") {
+		t.Error("canonical .rt/hook.zsh source line was removed")
+	}
+	if !strings.Contains(lines, "alias ll='ls -la'") {
+		t.Error("unrelated config was removed")
+	}
+}
+
+func TestUninstallCleansRepoSourceLines(t *testing.T) {
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		"source ~/code/rtlog/hook.zsh",
+		"source /opt/python-hook/hook.zsh",
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.zsh",
+		"alias ll='ls -la'",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	if strings.Contains(lines, "rtlog/hook.zsh") {
+		t.Error("repo-based rtlog source line was not removed")
+	}
+	if strings.Contains(lines, "python-hook/hook.zsh") {
+		t.Error("python-hook source line was not removed")
+	}
+	if !strings.Contains(lines, "alias ll='ls -la'") {
+		t.Error("unrelated config was removed")
+	}
+}

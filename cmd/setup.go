@@ -311,6 +311,14 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 			continue
 		}
 
+		// Migration: remove old repo-based or python-hook source lines
+		if strings.Contains(trimmed, "source") &&
+			(strings.Contains(trimmed, "/rtlog/hook.zsh") || strings.Contains(trimmed, "/python-hook/hook.zsh")) &&
+			!strings.Contains(trimmed, ".rt/hook.") {
+			migrated = true
+			continue
+		}
+
 		// Check for our source line
 		if trimmed == sourceLine {
 			hasSourceLine = true
