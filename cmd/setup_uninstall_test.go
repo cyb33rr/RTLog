@@ -303,3 +303,111 @@ func TestSetupCleanup_MissingFiles(t *testing.T) {
 	rtDir := t.TempDir()
 	setupCleanup(rtDir) // should not panic or error
 }
+
+// detectBinaryPathTestSetup saves and clears PATH, GOPATH, GOBIN env vars.
+// Returns a cleanup function that restores them.
+func detectBinaryPathTestSetup(t *testing.T) func() {
+	t.Helper()
+	origPath := os.Getenv("PATH")
+	origGopath := os.Getenv("GOPATH")
+	origGobin := os.Getenv("GOBIN")
+	os.Setenv("GOPATH", "")
+	os.Setenv("GOBIN", "")
+	return func() {
+		os.Setenv("PATH", origPath)
+		os.Setenv("GOPATH", origGopath)
+		os.Setenv("GOBIN", origGobin)
+	}
+}
+
+func TestDetectBinaryPath_FreshInstall(t *testing.T) {
+	cleanup := detectBinaryPathTestSetup(t)
+	defer cleanup()
+	os.Setenv("PATH", t.TempDir())
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".rt"), 0755)
+	kind, binPath := detectBinaryPath(home)
+	if kind != installFresh {
+		t.Errorf("expected installFresh, got %d", kind)
+	}
+	if binPath != "" {
+		t.Errorf("expected empty path, got %q", binPath)
+	}
+}
+
+func TestDetectBinaryPath_DefaultPath(t *testing.T) {
+	cleanup := detectBinaryPathTestSetup(t)
+	defer cleanup()
+	home := t.TempDir()
+	rtDir := filepath.Join(home, ".rt")
+	os.MkdirAll(rtDir, 0755)
+	binPath := filepath.Join(rtDir, "rtlog")
+	os.WriteFile(binPath, []byte("binary"), 0755)
+	os.Setenv("PATH", rtDir)
+	kind, resolved := detectBinaryPath(home)
+	if kind != installDefault {
+		t.Errorf("expected installDefault, got %d", kind)
+	}
+	if resolved != binPath {
+		t.Errorf("expected %q, got %q", binPath, resolved)
+	}
+}
+
+func TestDetectBinaryPath_DefaultPathViaSymlink(t *testing.T) {
+	cleanup := detectBinaryPathTestSetup(t)
+	defer cleanup()
+	home := t.TempDir()
+	rtDir := filepath.Join(home, ".rt")
+	localBin := filepath.Join(home, ".local", "bin")
+	os.MkdirAll(rtDir, 0755)
+	os.MkdirAll(localBin, 0755)
+	realBin := filepath.Join(rtDir, "rtlog")
+	os.WriteFile(realBin, []byte("binary"), 0755)
+	os.Symlink(realBin, filepath.Join(localBin, "rtlog"))
+	os.Setenv("PATH", localBin)
+	kind, resolved := detectBinaryPath(home)
+	if kind != installDefault {
+		t.Errorf("expected installDefault, got %d", kind)
+	}
+	if resolved != realBin {
+		t.Errorf("expected %q, got %q", realBin, resolved)
+	}
+}
+
+func TestDetectBinaryPath_CustomPath(t *testing.T) {
+	cleanup := detectBinaryPathTestSetup(t)
+	defer cleanup()
+	home := t.TempDir()
+	customDir := filepath.Join(t.TempDir(), "custom", "bin")
+	os.MkdirAll(customDir, 0755)
+	binPath := filepath.Join(customDir, "rtlog")
+	os.WriteFile(binPath, []byte("binary"), 0755)
+	os.Setenv("PATH", customDir)
+	kind, resolved := detectBinaryPath(home)
+	if kind != installCustom {
+		t.Errorf("expected installCustom, got %d", kind)
+	}
+	if resolved != binPath {
+		t.Errorf("expected %q, got %q", binPath, resolved)
+	}
+}
+
+func TestDetectBinaryPath_GoInstall(t *testing.T) {
+	cleanup := detectBinaryPathTestSetup(t)
+	defer cleanup()
+	home := t.TempDir()
+	gopath := filepath.Join(home, "go")
+	gopathBin := filepath.Join(gopath, "bin")
+	os.MkdirAll(gopathBin, 0755)
+	binPath := filepath.Join(gopathBin, "rtlog")
+	os.WriteFile(binPath, []byte("binary"), 0755)
+	os.Setenv("PATH", gopathBin)
+	os.Setenv("GOPATH", gopath)
+	kind, resolved := detectBinaryPath(home)
+	if kind != installGoInstall {
+		t.Errorf("expected installGoInstall, got %d", kind)
+	}
+	if resolved != binPath {
+		t.Errorf("expected %q, got %q", binPath, resolved)
+	}
+}

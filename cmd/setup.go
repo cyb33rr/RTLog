@@ -291,6 +291,79 @@ func setupCopySelf(dst string) {
 	fmt.Printf("[+]  Installed binary: %s\n", dst)
 }
 
+// setupCopySelfTo copies the running binary to dst using atomic temp+rename.
+// Returns an error instead of exiting, so callers can handle permission errors.
+func setupCopySelfTo(dst string) error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot determine own path: %w", err)
+	}
+	self, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		return fmt.Errorf("cannot resolve own path: %w", err)
+	}
+
+	// If we're already at the destination, skip
+	absDst, _ := filepath.Abs(dst)
+	if self == absDst {
+		fmt.Printf("[ok] Binary already at %s\n", dst)
+		return nil
+	}
+
+	// Check if existing binary is identical
+	selfInfo, err := os.Stat(self)
+	if err == nil {
+		dstInfo, derr := os.Stat(dst)
+		if derr == nil && selfInfo.Size() == dstInfo.Size() {
+			selfData, e1 := os.ReadFile(self)
+			dstData, e2 := os.ReadFile(dst)
+			if e1 == nil && e2 == nil && bytes.Equal(selfData, dstData) {
+				fmt.Printf("[ok] Binary is up to date: %s\n", dst)
+				return nil
+			}
+		}
+	}
+
+	// Atomic copy: write to temp + rename
+	dir := filepath.Dir(dst)
+	tmp, err := os.CreateTemp(dir, ".rtlog.")
+	if err != nil {
+		if os.IsPermission(err) {
+			return err
+		}
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	src, err := os.Open(self)
+	if err != nil {
+		tmp.Close()
+		return fmt.Errorf("cannot open self: %w", err)
+	}
+	defer src.Close()
+
+	if _, err := io.Copy(tmp, src); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to copy binary: %w", err)
+	}
+	if err := tmp.Chmod(0755); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to set permissions: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		if os.IsPermission(err) {
+			return err
+		}
+		return fmt.Errorf("failed to install binary: %w", err)
+	}
+	fmt.Printf("[+]  Installed binary: %s\n", dst)
+	return nil
+}
+
 // setupSymlink creates or updates a symlink.
 // Returns true if the symlink is in place, false if blocked by a regular file.
 func setupSymlink(link, target string) bool {
