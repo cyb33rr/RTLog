@@ -19,10 +19,10 @@ var uninstallCmd = &cobra.Command{
 	Short: "Remove rtlog from the system",
 	Long: `Remove rtlog installation artifacts:
 
-  1. Remove symlink ~/.local/bin/rtlog (if present)
-  2. Remove hook and PATH export lines from ~/.zshrc and ~/.bashrc
+  1. Remove hook and PATH export lines from ~/.zshrc and ~/.bashrc
+  2. Remove non-interactive hook lines from ~/.zshenv
   3. Optionally delete ~/.rt/ (prompts unless -y)
-  4. If installed via go install, advises how to remove the binary`,
+  4. Advise how to remove the binary from Go's bin directory`,
 	Args: cobra.NoArgs,
 	Run:  runUninstall,
 }
@@ -40,65 +40,35 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	}
 
 	rtDir := filepath.Join(home, ".rt")
-	localBin := filepath.Join(home, ".local", "bin")
 	zshrc := filepath.Join(home, ".zshrc")
 	bashrc := filepath.Join(home, ".bashrc")
-	symlinkPath := filepath.Join(localBin, "rtlog")
-	binaryPath := filepath.Join(rtDir, "rtlog")
 
 	fmt.Println("=== Red Team Operation Logger - Uninstaller ===")
 	fmt.Println()
 
-	// 1. Remove symlink
-	uninstallRemoveSymlink(symlinkPath, binaryPath)
-
-	// 2. Remove hook lines from shell rc files
+	// 1. Remove hook lines from shell rc files
 	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
 	uninstallCleanShellRc(bashrc, ".rt/hook.bash", ".bashrc")
 
-	// Clean non-interactive hook lines from .zshenv
+	// 2. Clean non-interactive hook lines
 	zshenv := filepath.Join(home, ".zshenv")
 	uninstallCleanNonInteractive(zshenv, ".zshenv")
-
-	// Clean BASH_ENV export from rc files
 	uninstallCleanNonInteractive(zshrc, ".zshrc")
 	uninstallCleanNonInteractive(bashrc, ".bashrc")
 
 	// 3. Remove ~/.rt/ (prompt first)
 	uninstallRemoveDir(rtDir)
 
-	// 4. Advise on go install binary if applicable
-	uninstallAdviseGoInstall()
+	// 4. Advise on binary removal
+	dir, _ := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
+	binPath := filepath.Join(dir, "rtlog")
+	fmt.Printf("[!]  Binary may be at %s\n", binPath)
+	fmt.Println("     Remove it with: rm", binPath)
 
 	fmt.Println()
 	fmt.Println("=== Uninstall complete ===")
 	fmt.Println()
 	fmt.Println("Open a new shell to apply changes.")
-}
-
-// uninstallRemoveSymlink removes the rtlog symlink if it points to our binary.
-func uninstallRemoveSymlink(link, expectedTarget string) {
-	target, err := os.Readlink(link)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Printf("[ok] No symlink at %s\n", link)
-			return
-		}
-		// Exists but not a symlink
-		fmt.Printf("[!]  %s exists but is not a symlink, skipping\n", link)
-		return
-	}
-
-	if target != expectedTarget {
-		fmt.Printf("[!]  %s points to %s (not ours), skipping\n", link, target)
-		return
-	}
-
-	if err := os.Remove(link); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  Failed to remove symlink: %v\n", err)
-		return
-	}
-	fmt.Printf("[-]  Removed symlink: %s\n", link)
 }
 
 // uninstallCleanShellRc removes hook-related lines from a shell rc file.
@@ -269,34 +239,3 @@ func uninstallRemoveDir(rtDir string) {
 	fmt.Printf("[-]  Removed %s\n", rtDir)
 }
 
-// uninstallAdviseGoInstall checks if the running binary lives in GOBIN/GOPATH
-// and advises the user to remove it manually.
-func uninstallAdviseGoInstall() {
-	self, err := os.Executable()
-	if err != nil {
-		return
-	}
-	self, _ = filepath.EvalSymlinks(self)
-	selfDir := filepath.Dir(self)
-
-	// Check against GOBIN or GOPATH/bin or ~/go/bin
-	gobin := os.Getenv("GOBIN")
-	if gobin != "" {
-		gobin, _ = filepath.Abs(gobin)
-	}
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			gopath = filepath.Join(home, "go")
-		}
-	}
-	gopathBin := ""
-	if gopath != "" {
-		gopathBin, _ = filepath.Abs(filepath.Join(gopath, "bin"))
-	}
-
-	if (gobin != "" && selfDir == gobin) || (gopathBin != "" && selfDir == gopathBin) {
-		fmt.Printf("[!]  Binary at %s was installed via 'go install'\n", self)
-		fmt.Println("     Remove it with: rm", self)
-	}
-}

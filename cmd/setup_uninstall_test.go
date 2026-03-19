@@ -510,6 +510,33 @@ func TestSetupMigrateSymlink_NotExists(t *testing.T) {
 	setupMigrateSymlink("/nonexistent/path", "/also/nonexistent")
 }
 
+func TestUninstallOnOldInstall(t *testing.T) {
+	// Uninstall should remove ~/.local/bin PATH export even without prior new setup
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/.local/bin:$PATH"`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.zsh",
+		"alias ll='ls -la'",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	uninstallCleanShellRc(zshrc, ".rt/hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	if strings.Contains(lines, `$HOME/.local/bin`) {
+		t.Error("old ~/.local/bin PATH export was not removed by uninstall")
+	}
+	if !strings.Contains(lines, "alias ll='ls -la'") {
+		t.Error("unrelated config was incorrectly removed")
+	}
+}
+
 func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
 	tmp := t.TempDir()
 	bashrc := filepath.Join(tmp, ".bashrc")
