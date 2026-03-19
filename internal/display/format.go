@@ -101,7 +101,9 @@ func PrintOutputBlock(entry Entry, stripAnsi bool) {
 }
 
 // FmtCompact formats an entry as a compact single line for the Atuin-style TUI.
-// Width is the terminal width; the output fits within it with metadata right-aligned.
+// Width is the terminal width used to right-align metadata and truncate the command.
+// When metadata alone exceeds the available width, the minimum 10-char command budget
+// and 2-char gutter are enforced; the caller's render loop is expected to clip the result.
 // Format: <timestamp zone>  <command><padding><exit:N  Ns  [tag]  # note  [+out]>
 func FmtCompact(entry Entry, width int) string {
 	// Timestamp zone: always 10 visible chars (8-char time + 2-space gap, or 10 spaces)
@@ -160,7 +162,7 @@ func FmtCompact(entry Entry, width int) string {
 	cmd = truncateText(cmd, cmdWidth)
 
 	// Pad between command and metadata to right-align
-	usedWidth := 10 + len([]rune(cmd)) + metaWidth
+	usedWidth := 10 + visibleLen(cmd) + metaWidth
 	padding := width - usedWidth
 	if padding < 2 {
 		padding = 2 // minimum gutter

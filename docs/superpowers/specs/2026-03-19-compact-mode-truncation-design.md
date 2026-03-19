@@ -52,7 +52,7 @@ Metadata visible width is computed using `visibleLen()` which strips ANSI color 
 
 - If note text exceeds 15 visible characters, truncate to 14 + `…`
 - The 15-char cap applies to the note text only, not the `# ` prefix
-- Example: `# this is a very lo…`
+- Example: `# this is a very…`
 
 ## Command Truncation
 
