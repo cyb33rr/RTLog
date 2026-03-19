@@ -337,7 +337,7 @@ func (s *Selector) render() {
 	if s.expanded && len(s.filtered) > 0 {
 		outLines = s.getOutputLines(h)
 		entryIdx := s.filtered[s.cursor]
-		curLine := RE_ANSI.ReplaceAllString(FmtCompact(s.entries[entryIdx]), "")
+		curLine := RE_ANSI.ReplaceAllString(FmtCompact(s.entries[entryIdx], w), "")
 		nRunes := len([]rune(curLine))
 		if nRunes > w {
 			wrapExtra = (nRunes - 1) / w
@@ -372,7 +372,7 @@ func (s *Selector) render() {
 
 		for i := s.offset; i < end; i++ {
 			entryIdx := s.filtered[i]
-			line := FmtCompact(s.entries[entryIdx])
+			line := FmtCompact(s.entries[entryIdx], w)
 			if i == s.cursor {
 				plain := RE_ANSI.ReplaceAllString(line, "")
 				if s.expanded {

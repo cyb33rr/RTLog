@@ -101,15 +101,24 @@ func PrintOutputBlock(entry Entry, stripAnsi bool) {
 }
 
 // FmtCompact formats an entry as a compact single line for the Atuin-style TUI.
-// Format: HH:MM:SS  cmd  exit:N  Ns  [tag]  # note  [+out]
-// No index number, no separate tool name.
-func FmtCompact(entry Entry) string {
+// Width is the terminal width; the output fits within it with metadata right-aligned.
+// Format: <timestamp zone>  <command><padding><exit:N  Ns  [tag]  # note  [+out]>
+func FmtCompact(entry Entry, width int) string {
+	// Timestamp zone: always 10 visible chars (8-char time + 2-space gap, or 10 spaces)
 	tsRaw, _ := entry["ts"].(string)
-	tsStr := formatTimestamp(tsRaw)
+	ts := formatTimestamp(tsRaw)
+	var tsZone string
+	if ts == "" {
+		tsZone = "          " // 10 spaces
+	} else {
+		tsZone = ts + "  "
+	}
 
+	// Command — collapse newlines (plain text, no ANSI)
 	cmd := getString(entry, "cmd", "")
 	cmd = strings.ReplaceAll(cmd, "\n", " ")
 
+	// Build metadata suffix
 	exitCode := getInt(entry, "exit", -1)
 	var exitStr string
 	if exitCode == 0 {
@@ -130,6 +139,7 @@ func FmtCompact(entry Entry) string {
 	note := getString(entry, "note", "")
 	noteStr := ""
 	if note != "" {
+		note = truncateText(note, 15)
 		noteStr = "  # " + note
 	}
 
@@ -138,7 +148,25 @@ func FmtCompact(entry Entry) string {
 		outIndicator = "  " + Colorize("[+out]", Dim)
 	}
 
-	return fmt.Sprintf("%s  %s  %s  %s%s%s%s", tsStr, cmd, exitStr, durStr, tagStr, noteStr, outIndicator)
+	meta := exitStr + "  " + durStr + tagStr + noteStr + outIndicator
+	metaWidth := visibleLen(meta)
+
+	// Command width budget: total - timestamp(10) - gutter(2) - metadata
+	cmdWidth := width - 10 - 2 - metaWidth
+	if cmdWidth < 10 {
+		cmdWidth = 10
+	}
+
+	cmd = truncateText(cmd, cmdWidth)
+
+	// Pad between command and metadata to right-align
+	usedWidth := 10 + len([]rune(cmd)) + metaWidth
+	padding := width - usedWidth
+	if padding < 2 {
+		padding = 2 // minimum gutter
+	}
+
+	return tsZone + cmd + strings.Repeat(" ", padding) + meta
 }
 
 // formatTimestamp extracts HH:MM:SS from an ISO timestamp.
