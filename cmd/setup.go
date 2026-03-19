@@ -15,6 +15,14 @@ import (
 // rtlogTag is appended to lines written by setup for safe identification during uninstall.
 const rtlogTag = "  # added by rtlog"
 
+// isLegacySourceLine returns true if the line is an old repo-based or python-hook source line
+// that should be removed during setup migration or uninstall.
+func isLegacySourceLine(trimmed string) bool {
+	return strings.Contains(trimmed, "source") &&
+		(strings.Contains(trimmed, "/rtlog/hook.zsh") || strings.Contains(trimmed, "/python-hook/hook.zsh")) &&
+		!strings.Contains(trimmed, ".rt/hook.")
+}
+
 // embeddedFS holds the embedded hook files, tools.conf, and extract.conf.
 var embeddedFS embed.FS
 
@@ -313,6 +321,8 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 	hasGoBinExport := false
 	migrated := false
 
+	untagged := strings.TrimSuffix(goBinExportLine, rtlogTag)
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
@@ -323,9 +333,7 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 		}
 
 		// Migration: remove old repo-based or python-hook source lines
-		if strings.Contains(trimmed, "source") &&
-			(strings.Contains(trimmed, "/rtlog/hook.zsh") || strings.Contains(trimmed, "/python-hook/hook.zsh")) &&
-			!strings.Contains(trimmed, ".rt/hook.") {
+		if isLegacySourceLine(trimmed) {
 			migrated = true
 			continue
 		}
@@ -337,7 +345,6 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 
 		// Check for existing Go bin PATH export (tagged or untagged)
 		if goBinExportLine != "" && !strings.HasPrefix(trimmed, "#") {
-			untagged := strings.TrimSuffix(goBinExportLine, rtlogTag)
 			if trimmed == goBinExportLine {
 				hasGoBinExport = true
 			} else if trimmed == untagged {
@@ -354,7 +361,7 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 
 	if migrated {
 		newLines = collapseBlankLines(newLines)
-		fmt.Printf("[~]  Removed old ~/.local/bin PATH export from %s\n", rcName)
+		fmt.Printf("[~]  Migrated old config lines in %s\n", rcName)
 	}
 
 	// Append Go bin PATH export if needed

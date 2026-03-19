@@ -107,9 +107,7 @@ func uninstallCleanShellRc(rcFile, hookPattern, rcName, goBinExportLine string) 
 		}
 
 		// Remove old repo-based or python-hook source lines
-		if strings.Contains(trimmed, "source") &&
-			(strings.Contains(trimmed, "/rtlog/hook.zsh") || strings.Contains(trimmed, "/python-hook/hook.zsh")) &&
-			!strings.Contains(trimmed, ".rt/hook.") {
+		if isLegacySourceLine(trimmed) {
 			removed = true
 			continue
 		}
