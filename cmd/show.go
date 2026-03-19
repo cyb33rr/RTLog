@@ -66,28 +66,24 @@ var showCmd = &cobra.Command{
 			return
 		}
 
-		header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
-		if dateLabel != "" {
-			header += fmt.Sprintf("  [%s]", dateLabel)
-		}
-
-		idxWidth := len(fmt.Sprintf("%d", len(entries)))
-
 		// Convert to display.Entry maps
 		entryMaps := make([]display.Entry, len(entries))
 		for i, e := range entries {
 			entryMaps[i] = logfile.ToMap(e)
 		}
 
-		// Default to reverse order (newest first)
-		for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
-			entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
-		}
-
-		n := len(entryMaps)
-		origIdx := func(i int) int { return n - i }
-
 		if showOutput {
+			// Non-interactive --all: reverse for newest-first, use FmtEntry
+			for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
+				entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
+			}
+			header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
+			if dateLabel != "" {
+				header += fmt.Sprintf("  [%s]", dateLabel)
+			}
+			idxWidth := len(fmt.Sprintf("%d", len(entries)))
+			n := len(entryMaps)
+			origIdx := func(i int) int { return n - i }
 			fmt.Println(display.Colorize(header, display.Bold))
 			fmt.Println()
 			for i, m := range entryMaps {
@@ -95,12 +91,24 @@ var showCmd = &cobra.Command{
 				display.PrintOutputBlock(m, true)
 			}
 		} else if display.IsTTY {
-			sel := display.NewSelector(entryMaps, header, idxWidth)
+			// Interactive TUI: entries in chronological order (oldest first)
+			sel := display.NewSelector(entryMaps)
 			if err := sel.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
+			// Non-interactive pipe: reverse for newest-first, use FmtEntry
+			for i, j := 0, len(entryMaps)-1; i < j; i, j = i+1, j-1 {
+				entryMaps[i], entryMaps[j] = entryMaps[j], entryMaps[i]
+			}
+			header := fmt.Sprintf("--- %s ---", logfile.EngagementName(path))
+			if dateLabel != "" {
+				header += fmt.Sprintf("  [%s]", dateLabel)
+			}
+			idxWidth := len(fmt.Sprintf("%d", len(entries)))
+			n := len(entryMaps)
+			origIdx := func(i int) int { return n - i }
 			fmt.Println(display.Colorize(header, display.Bold))
 			fmt.Println()
 			for i, m := range entryMaps {
