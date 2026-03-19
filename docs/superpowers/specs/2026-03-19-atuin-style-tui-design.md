@@ -9,19 +9,17 @@ Enhance RTLog's interactive `show` command with an Atuin-style TUI: compact colo
 Newest entry at the bottom, older entries above. Filter bar pinned below the list.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  14:12:01  nmap -sC -sV 10.10.14.0/24  exit:0  12s     │
-│            [recon]  # initial scan  [+out]               │
-│  14:15:44  crackmapexec smb 10.10.14.0/24  exit:0  3s   │
-│            [recon]                                       │
-│  14:18:07  gobuster dir -u http://10.10.14.5  exit:0 8s │
-│            [recon]  # found /admin  [+out]               │
-│▸ 14:22:01  nmap -sV -p 1-1000 10.10.14.5  exit:0  8.1s │  ← selected
-│            [recon]  # port scan  [+out]                  │
-│                                                          │
-│  [recon] [!fail]  5/42 matches   ▸ nmap_                │  ← filter bar
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│  14:12:01  nmap -sC -sV 10.10.14.0/24  exit:0  12s  [recon]  # initial scan  [+out] │
+│  14:15:44  crackmapexec smb 10.10.14.0/24  exit:0  3s  [recon]                      │
+│  14:18:07  gobuster dir -u http://10.10.14.5 -w ...  exit:0  8s  [recon]  [+out]    │
+│▸ 14:22:01  nmap -sV -p 1-1000 10.10.14.5  exit:0  8.1s  [recon]  # port scan       │  ← selected
+│                                                                                      │
+│  [recon] [!fail]  4/42 matches   ▸ nmap_                                            │  ← filter bar
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Each entry is a single line. Long commands are truncated to terminal width. The diagram is wide for clarity; in practice, entries truncate to fit.
 
 - Cursor starts at the bottom (newest entry).
 - Up arrow moves to older entries, down arrow to newer.
@@ -68,7 +66,7 @@ The selected row is highlighted with inverted colors. No auto-expanded metadata 
 | `Tab` | Cycle tag filter: all → recon → exploitation → ... → all |
 | `Ctrl+F` | Toggle failed-only (non-zero exit codes) |
 
-`Esc` is the only quit key. All other keys either filter or navigate.
+`Esc` is the only quit key. The current `q`-to-quit and `r`-to-reverse keybindings are removed — `q` and `r` now type into the filter like any other printable character. The `r`-to-reverse feature is removed entirely (display order is always newest-at-bottom). All other keys either filter or navigate.
 
 ## Filtering Behavior
 
@@ -124,13 +122,13 @@ Evolve the existing `Selector` struct:
 - **Input handling:**
   - Replace single-key-only handling with mixed mode
   - Printable characters (0x20–0x7E, plus UTF-8 sequences) append to `filter`
-  - `Backspace` (0x7F) removes last rune from `filter`
+  - `Backspace` (0x7F or 0x08 — handle both for terminal compatibility) removes last rune from `filter`
   - Arrow keys, Enter, Tab, Ctrl+F keep their navigation/toggle roles
-  - `Esc` (0x1B, single byte — not part of an escape sequence) quits
+  - `Esc` (0x1B, single byte — not part of an escape sequence) quits. Disambiguation: the existing approach of reading up to 3 bytes per `Read()` call works — escape sequences arrive as a burst, so a lone 0x1B means Esc.
 
 - **New methods:**
   - `applyFilters()` — rebuilds `filtered` slice by testing each entry against text filter, tag filter, and fail-only. Called on any filter state change.
-  - `collectTags()` — scans entries to build `allTags` slice for Tab cycling.
+  - `collectTags()` — scans all entries (not just filtered) to build `allTags` slice for Tab cycling. Called once at startup. Tags are engagement-level, not filter-dependent.
   - `renderFilterBar(width int) string` — renders the bottom filter bar.
 
 - **Display order:**
@@ -148,13 +146,16 @@ func FmtCompact(entry Entry) string
 
 Format: `HH:MM:SS  cmd  exit:N  Ns  [tag]  # note  [+out]`
 
+The `[+out]` indicator is determined by checking `entry["out"]` internally — entry maps always carry the `"out"` key (as an empty string when no output was captured), so no parameter is needed.
+
 Reuses existing helpers: `formatTimestamp`, `getString`, `getInt`, `getFloat`, `Colorize`.
 
 #### `cmd/show.go`
 
 - Remove the manual entry reversal (selector handles display order).
+- Remove the engagement name header passed to the selector (the filter bar replaces it as the primary chrome).
 - No new flags.
-- Non-interactive path (`--all` flag, non-TTY) unchanged.
+- Non-interactive path (`--all` flag, non-TTY) unchanged — continues to use `FmtEntry()` with index numbers and tool names.
 
 ### Files Not Changed
 
