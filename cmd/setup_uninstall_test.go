@@ -283,6 +283,34 @@ func TestSetupCleanup_MissingFiles(t *testing.T) {
 	setupCleanup(rtDir) // should not panic or error
 }
 
+func TestSetupCleanupTmpFiles(t *testing.T) {
+	rtDir := t.TempDir()
+
+	// Create orphan temp files in /tmp
+	tmpFiles := []string{}
+	for _, pattern := range []string{"/tmp/.rtlog_out.", "/tmp/.rtlog_ni_out."} {
+		f, err := os.CreateTemp("/tmp", filepath.Base(pattern))
+		if err != nil {
+			t.Fatalf("failed to create temp file: %v", err)
+		}
+		f.Close()
+		tmpFiles = append(tmpFiles, f.Name())
+	}
+	defer func() {
+		for _, f := range tmpFiles {
+			os.Remove(f)
+		}
+	}()
+
+	setupCleanup(rtDir)
+
+	for _, f := range tmpFiles {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Errorf("orphan temp file was not cleaned: %s", f)
+		}
+	}
+}
+
 func TestSetupShellRcGoBinExport(t *testing.T) {
 	tmp := t.TempDir()
 	bashrc := filepath.Join(tmp, ".bashrc")

@@ -198,6 +198,14 @@ func setupCleanup(rtDir string) {
 			fmt.Printf("[~]  Cleaned up: %s\n", name)
 		}
 	}
+
+	// Clean orphan temp files from shell hooks
+	for _, pattern := range []string{"/tmp/.rtlog_out.*", "/tmp/.rtlog_ni_out.*"} {
+		matches, _ := filepath.Glob(pattern)
+		for _, m := range matches {
+			os.Remove(m) // errors silently ignored (e.g. EPERM on shared systems)
+		}
+	}
 }
 
 // setupMigrateSymlink removes a symlink at link if it points to expectedTarget.
