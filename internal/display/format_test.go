@@ -67,6 +67,9 @@ func TestFmtCompactEmptyOptionalFields(t *testing.T) {
 	if strings.Contains(got, "#") {
 		t.Errorf("should not have note marker when note is empty: %q", got)
 	}
+	if !strings.Contains(got, "exit:1") {
+		t.Errorf("missing non-zero exit code in %q", got)
+	}
 }
 
 func TestFmtCompactNewlinesCollapsed(t *testing.T) {

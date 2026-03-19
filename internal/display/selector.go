@@ -3,10 +3,73 @@ package display
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"golang.org/x/term"
 )
+
+// ApplyFilters returns indices into entries that match all active filters.
+// textFilter is case-insensitive substring across cmd, tool, tag, note, cwd.
+// tagFilter is exact match on tag ("" = no filter).
+// failOnly filters to non-zero exit codes.
+func ApplyFilters(entries []Entry, textFilter, tagFilter string, failOnly bool) []int {
+	var result []int
+	lower := strings.ToLower(textFilter)
+	for i, e := range entries {
+		if tagFilter != "" {
+			if getString(e, "tag", "") != tagFilter {
+				continue
+			}
+		}
+		if failOnly {
+			if getInt(e, "exit", 0) == 0 {
+				continue
+			}
+		}
+		if lower != "" {
+			fields := []string{
+				strings.ToLower(getString(e, "cmd", "")),
+				strings.ToLower(getString(e, "tool", "")),
+				strings.ToLower(getString(e, "tag", "")),
+				strings.ToLower(getString(e, "note", "")),
+				strings.ToLower(getString(e, "cwd", "")),
+			}
+			found := false
+			for _, f := range fields {
+				if strings.Contains(f, lower) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		result = append(result, i)
+	}
+	if result == nil {
+		result = []int{}
+	}
+	return result
+}
+
+// CollectTags returns unique non-empty tags from all entries, sorted.
+func CollectTags(entries []Entry) []string {
+	seen := map[string]bool{}
+	for _, e := range entries {
+		tag := getString(e, "tag", "")
+		if tag != "" {
+			seen[tag] = true
+		}
+	}
+	tags := make([]string, 0, len(seen))
+	for tag := range seen {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
+}
 
 // Selector provides an interactive terminal UI for browsing log entries.
 type Selector struct {
