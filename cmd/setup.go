@@ -616,3 +616,24 @@ func isGoInstalled(binPath, gopath, gobin string) bool {
 	}
 	return false
 }
+
+// resolveGoBinDir returns the Go bin directory and a portable PATH export line.
+// It checks GOBIN first, then GOPATH/bin, then ~/go/bin.
+// Paths under home use $HOME for portability; paths outside use absolute paths.
+func resolveGoBinDir(home, gobin, gopath string) (dir string, exportLine string) {
+	if gobin != "" {
+		dir = gobin
+	} else if gopath != "" {
+		dir = filepath.Join(gopath, "bin")
+	} else {
+		dir = filepath.Join(home, "go", "bin")
+	}
+
+	// Build portable export line
+	pathStr := dir
+	if strings.HasPrefix(dir, home+string(filepath.Separator)) {
+		pathStr = "$HOME" + dir[len(home):]
+	}
+	exportLine = fmt.Sprintf(`export PATH="%s:$PATH"`, pathStr)
+	return dir, exportLine
+}

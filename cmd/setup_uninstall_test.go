@@ -434,3 +434,70 @@ func TestSetupCopySelfTo_PermissionError(t *testing.T) {
 		t.Errorf("expected permission error, got: %v", err)
 	}
 }
+
+func TestResolveGoBinDir(t *testing.T) {
+	home := "/home/testuser"
+
+	tests := []struct {
+		name       string
+		gobin      string
+		gopath     string
+		wantDir    string
+		wantExport string
+	}{
+		{
+			name:       "default (no GOBIN, no GOPATH)",
+			gobin:      "",
+			gopath:     "",
+			wantDir:    filepath.Join(home, "go", "bin"),
+			wantExport: `export PATH="$HOME/go/bin:$PATH"`,
+		},
+		{
+			name:       "custom GOPATH under home",
+			gobin:      "",
+			gopath:     filepath.Join(home, "mygo"),
+			wantDir:    filepath.Join(home, "mygo", "bin"),
+			wantExport: `export PATH="$HOME/mygo/bin:$PATH"`,
+		},
+		{
+			name:       "custom GOPATH outside home",
+			gobin:      "",
+			gopath:     "/opt/gowork",
+			wantDir:    "/opt/gowork/bin",
+			wantExport: `export PATH="/opt/gowork/bin:$PATH"`,
+		},
+		{
+			name:       "GOBIN set under home",
+			gobin:      filepath.Join(home, ".gobin"),
+			gopath:     "",
+			wantDir:    filepath.Join(home, ".gobin"),
+			wantExport: `export PATH="$HOME/.gobin:$PATH"`,
+		},
+		{
+			name:       "GOBIN set outside home",
+			gobin:      "/usr/local/gobin",
+			gopath:     "",
+			wantDir:    "/usr/local/gobin",
+			wantExport: `export PATH="/usr/local/gobin:$PATH"`,
+		},
+		{
+			name:       "GOBIN takes priority over GOPATH",
+			gobin:      filepath.Join(home, ".gobin"),
+			gopath:     filepath.Join(home, "mygo"),
+			wantDir:    filepath.Join(home, ".gobin"),
+			wantExport: `export PATH="$HOME/.gobin:$PATH"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotDir, gotExport := resolveGoBinDir(home, tt.gobin, tt.gopath)
+			if gotDir != tt.wantDir {
+				t.Errorf("dir = %q, want %q", gotDir, tt.wantDir)
+			}
+			if gotExport != tt.wantExport {
+				t.Errorf("export = %q, want %q", gotExport, tt.wantExport)
+			}
+		})
+	}
+}
