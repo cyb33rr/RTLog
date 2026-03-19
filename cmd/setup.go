@@ -24,23 +24,99 @@ func SetEmbeddedFiles(fs embed.FS) {
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Install rtlog into ~/.rt/ and configure the shell",
-	Long: `Idempotent setup that installs rtlog to ~/.rt/ and configures zsh and/or bash.
+	Short: "Configure rtlog shell hooks and environment",
+	Long: `Idempotent setup that configures zsh and/or bash for rtlog.
+
+Requires Go toolchain (binary installed via 'go install').
 
 Steps performed:
   1. Create ~/.rt/logs/
   2. Clean up stale files from previous versions
-  3. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
-  4. Detect binary on PATH and install (custom path, default, or fresh install)
-  5. Configure ~/.zshrc and/or ~/.bashrc (hook source line; PATH export)
-  6. Configure ~/.zshenv for non-interactive zsh capture
-  7. Export BASH_ENV in shell rc files for non-interactive bash capture`,
+  3. Migrate old installs (remove ~/.rt/rtlog binary, ~/.local/bin symlink)
+  4. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
+  5. Resolve Go bin directory and ensure it is on PATH
+  6. Configure ~/.zshrc and/or ~/.bashrc (hook source line; Go bin PATH export)
+  7. Configure ~/.zshenv for non-interactive zsh capture
+  8. Export BASH_ENV in shell rc files for non-interactive bash capture`,
 	Args: cobra.NoArgs,
 	Run:  runSetup,
 }
 
 func init() {
 	rootCmd.AddCommand(setupCmd)
+}
+
+// setupCore runs all setup steps and returns an error on failure.
+// Called by both runSetup (standalone) and runUpdate (after go install).
+func setupCore(home string) error {
+	rtDir := filepath.Join(home, ".rt")
+	logDir := filepath.Join(rtDir, "logs")
+	zshrc := filepath.Join(home, ".zshrc")
+	bashrc := filepath.Join(home, ".bashrc")
+
+	// 1. Create directories
+	if err := setupCreateDir(logDir); err != nil {
+		return err
+	}
+
+	// 2. Cleanup stale files
+	setupCleanup(rtDir)
+
+	// 3. Write embedded files
+	embeds := []struct {
+		name       string
+		dst        string
+		userConfig bool
+	}{
+		{"hook.zsh", filepath.Join(rtDir, "hook.zsh"), false},
+		{"hook.bash", filepath.Join(rtDir, "hook.bash"), false},
+		{"bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false},
+		{"tools.conf", filepath.Join(rtDir, "tools.conf"), true},
+		{"extract.conf", filepath.Join(rtDir, "extract.conf"), true},
+		{"hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false},
+		{"hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false},
+	}
+	for _, f := range embeds {
+		if err := setupWriteEmbedded(f.name, f.dst, f.userConfig); err != nil {
+			return err
+		}
+	}
+
+	// 4. Resolve Go bin dir
+	_, goBinExportLine := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
+
+	// 5. Configure shell rc files
+	zshrcExists := fileExists(zshrc)
+	bashrcExists := fileExists(bashrc)
+
+	if zshrcExists {
+		if err := setupShellRc(zshrc, "", rtDir, false, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
+			return err
+		}
+	}
+	if bashrcExists {
+		if err := setupShellRc(bashrc, "", rtDir, false, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
+			return err
+		}
+	}
+	if !zshrcExists && !bashrcExists {
+		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
+		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
+	}
+
+	// 6. Configure .zshenv for non-interactive zsh capture
+	zshenv := filepath.Join(home, ".zshenv")
+	setupZshenv(zshenv, rtDir)
+
+	// 7. BASH_ENV for non-interactive bash capture
+	if zshrcExists {
+		setupBashEnv(zshrc, rtDir, ".zshrc")
+	}
+	if bashrcExists {
+		setupBashEnv(bashrc, rtDir, ".bashrc")
+	}
+
+	return nil
 }
 
 func runSetup(cmd *cobra.Command, args []string) {
@@ -50,132 +126,18 @@ func runSetup(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	rtDir := filepath.Join(home, ".rt")
-	logDir := filepath.Join(rtDir, "logs")
-	localBin := filepath.Join(home, ".local", "bin")
-	zshrc := filepath.Join(home, ".zshrc")
-	bashrc := filepath.Join(home, ".bashrc")
-
 	fmt.Println("=== Red Team Operation Logger - Setup ===")
 	fmt.Println()
 
-	// 1. Create ~/.rt/logs/ (always needed)
-	if err := setupCreateDir(logDir); err != nil {
+	if err := setupCore(home); err != nil {
 		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
 		os.Exit(1)
 	}
 
-	// 2. Cleanup stale files from previous versions
-	setupCleanup(rtDir)
-
-	// 3. Write embedded files (both shells, always)
-	if err := setupWriteEmbedded("hook.zsh", filepath.Join(rtDir, "hook.zsh"), false); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("hook.bash", filepath.Join(rtDir, "hook.bash"), false); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("bash-preexec.sh", filepath.Join(rtDir, "bash-preexec.sh"), false); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("tools.conf", filepath.Join(rtDir, "tools.conf"), true); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("extract.conf", filepath.Join(rtDir, "extract.conf"), true); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("hook-noninteractive.zsh", filepath.Join(rtDir, "hook-noninteractive.zsh"), false); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupWriteEmbedded("hook-noninteractive.bash", filepath.Join(rtDir, "hook-noninteractive.bash"), false); err != nil {
-		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-		os.Exit(1)
-	}
-
-	// 4. Binary installation — detect existing path
-	kind, binPath := detectBinaryPath(home)
-	addPathExport := false
-	goBinExportLine := ""
-
-	switch kind {
-	case installGoInstall:
-		fmt.Println("[ok] Installed via 'go install', skipping binary copy")
-		fmt.Println("     To update: go install github.com/cyb33rr/rtlog@latest")
-		_, goBinExportLine = resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
-
-	case installCustom:
-		fmt.Printf("[ok] Binary found at custom path: %s\n", binPath)
-		if err := setupCopySelfTo(binPath); err != nil {
-			if os.IsPermission(err) {
-				fmt.Fprintf(os.Stderr, "[!]  Permission denied writing to %s\n", binPath)
-				fmt.Fprintf(os.Stderr, "     Try: sudo rtlog setup\n")
-			} else {
-				fmt.Fprintf(os.Stderr, "[!]  Failed to update binary: %v\n", err)
-				os.Exit(1)
-			}
-		}
-
-	case installDefault:
-		if err := setupCreateDir(localBin); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-			os.Exit(1)
-		}
-		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
-			os.Exit(1)
-		}
-		setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
-
-	case installFresh:
-		if err := setupCreateDir(localBin); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-			os.Exit(1)
-		}
-		if err := setupCopySelfTo(filepath.Join(rtDir, "rtlog")); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  Failed to install binary: %v\n", err)
-			os.Exit(1)
-		}
-		addPathExport = setupSymlink(filepath.Join(localBin, "rtlog"), filepath.Join(rtDir, "rtlog"))
-	}
-
-	// 5. Configure shell rc files based on existence
+	zshrc := filepath.Join(home, ".zshrc")
+	bashrc := filepath.Join(home, ".bashrc")
 	zshrcExists := fileExists(zshrc)
 	bashrcExists := fileExists(bashrc)
-
-	if zshrcExists {
-		if err := setupShellRc(zshrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-			os.Exit(1)
-		}
-	}
-	if bashrcExists {
-		if err := setupShellRc(bashrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
-			fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
-			os.Exit(1)
-		}
-	}
-	if !zshrcExists && !bashrcExists {
-		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
-		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
-	}
-
-	// 6. Configure ~/.zshenv for non-interactive zsh capture
-	zshenv := filepath.Join(home, ".zshenv")
-	setupZshenv(zshenv, rtDir)
-
-	// 7. Export BASH_ENV in shell rc files for non-interactive bash capture
-	if zshrcExists {
-		setupBashEnv(zshrc, rtDir, ".zshrc")
-	}
-	if bashrcExists {
-		setupBashEnv(bashrc, rtDir, ".bashrc")
-	}
 
 	fmt.Println()
 	fmt.Println("=== Setup complete ===")
