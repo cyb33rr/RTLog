@@ -77,11 +77,13 @@ func runSetup(cmd *cobra.Command, args []string) {
 	// 4. Binary installation — detect existing path
 	kind, binPath := detectBinaryPath(home)
 	addPathExport := false
+	goBinExportLine := ""
 
 	switch kind {
 	case installGoInstall:
 		fmt.Println("[ok] Installed via 'go install', skipping binary copy")
 		fmt.Println("     To update: go install github.com/cyb33rr/rtlog@latest")
+		_, goBinExportLine = resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
 
 	case installCustom:
 		fmt.Printf("[ok] Binary found at custom path: %s\n", binPath)
@@ -117,10 +119,10 @@ func runSetup(cmd *cobra.Command, args []string) {
 	bashrcExists := fileExists(bashrc)
 
 	if zshrcExists {
-		setupShellRc(zshrc, localBin, rtDir, addPathExport, "hook.zsh", ".zshrc")
+		setupShellRc(zshrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.zsh", ".zshrc")
 	}
 	if bashrcExists {
-		setupShellRc(bashrc, localBin, rtDir, addPathExport, "hook.bash", ".bashrc")
+		setupShellRc(bashrc, localBin, rtDir, addPathExport, goBinExportLine, "hook.bash", ".bashrc")
 	}
 	if !zshrcExists && !bashrcExists {
 		fmt.Println("[!]  No ~/.zshrc or ~/.bashrc found — skipping shell configuration")
@@ -413,7 +415,7 @@ func detectBinaryPath(home string) (installKind, string) {
 
 // setupShellRc ensures PATH and hook source lines are in the given rc file.
 // hookFile is "hook.zsh" or "hook.bash". rcName is ".zshrc" or ".bashrc" (for messages).
-func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, rcName string) {
+func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, goBinExportLine, hookFile, rcName string) {
 	sourceLine := fmt.Sprintf("source %s/.rt/%s", "$HOME", hookFile)
 
 	// Read existing content
@@ -427,6 +429,7 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, 
 	var newLines []string
 	hasPathExport := false
 	hasSourceLine := false
+	hasGoBinExport := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -441,6 +444,11 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, 
 			hasSourceLine = true
 		}
 
+		// Check for existing Go bin PATH export
+		if goBinExportLine != "" && !strings.HasPrefix(trimmed, "#") && trimmed == goBinExportLine {
+			hasGoBinExport = true
+		}
+
 		newLines = append(newLines, line)
 	}
 
@@ -452,8 +460,18 @@ func setupShellRc(rcFile, localBin, rtDir string, addPathExport bool, hookFile, 
 		} else {
 			fmt.Printf("[ok] %s already in PATH\n", localBin)
 		}
-	} else {
+	} else if goBinExportLine == "" {
 		fmt.Printf("[ok] Binary on PATH, skipping PATH export in %s\n", rcName)
+	}
+
+	// Append Go bin PATH export if needed
+	if goBinExportLine != "" {
+		if !hasGoBinExport {
+			newLines = append(newLines, "", goBinExportLine)
+			fmt.Printf("[+]  Added Go bin to PATH in %s\n", rcName)
+		} else {
+			fmt.Printf("[ok] Go bin already in PATH\n")
+		}
 	}
 
 	// Append source line if missing

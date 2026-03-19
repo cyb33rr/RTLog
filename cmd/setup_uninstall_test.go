@@ -224,7 +224,7 @@ func TestSetupShellRcBash(t *testing.T) {
 	// Create an existing .bashrc
 	os.WriteFile(bashrc, []byte("# my bash config\n"), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "", "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -249,7 +249,7 @@ func TestSetupShellRcIdempotent(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"), false, "", "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -432,6 +432,61 @@ func TestSetupCopySelfTo_PermissionError(t *testing.T) {
 	}
 	if !os.IsPermission(err) {
 		t.Errorf("expected permission error, got: %v", err)
+	}
+}
+
+func TestSetupShellRcGoBinExport(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
+
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
+		false, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if !strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"`) {
+		t.Error("Go bin PATH export not added")
+	}
+	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
+		t.Error("hook source line not added")
+	}
+}
+
+func TestSetupShellRcGoBinExportAlreadyPresent(t *testing.T) {
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+	initial := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/go/bin:$PATH"`,
+		"",
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(initial), 0644)
+
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
+		false, `export PATH="$HOME/go/bin:$PATH"`, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	if string(result) != initial {
+		t.Errorf("setupShellRc modified file when Go bin export already present:\n%s", result)
+	}
+}
+
+func TestSetupShellRcNoGoBinExport(t *testing.T) {
+	// When goBinExportLine is empty, no Go bin export should be added
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
+
+	setupShellRc(bashrc, filepath.Join(tmp, ".local", "bin"), filepath.Join(tmp, ".rt"),
+		false, "", "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	if strings.Contains(string(result), "go/bin") {
+		t.Error("Go bin export added when goBinExportLine was empty")
 	}
 }
 
