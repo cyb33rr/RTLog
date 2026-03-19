@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/cyb33rr/rtlog/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -138,6 +140,26 @@ func setupCreateDir(dir string) {
 		os.Exit(1)
 	}
 	fmt.Printf("[+]  Created directory: %s\n", dir)
+}
+
+// setupCleanup deletes stale application-managed files from rtDir.
+// Preserved: logs/, state, tools.conf, extract.conf, rtlog binary.
+func setupCleanup(rtDir string) {
+	denylist := []string{
+		"hook.zsh",
+		"hook.bash",
+		"hook-noninteractive.zsh",
+		"hook-noninteractive.bash",
+		"bash-preexec.sh",
+		"last-update-check",
+		"update-available",
+	}
+	for _, name := range denylist {
+		path := filepath.Join(rtDir, name)
+		if err := os.Remove(path); err == nil {
+			fmt.Printf("[~]  Cleaned up: %s\n", name)
+		}
+	}
 }
 
 // setupWriteEmbedded writes an embedded file to dst, skipping if identical.
@@ -333,6 +355,49 @@ func isOnPath() bool {
 		}
 	}
 	return false
+}
+
+// installKind classifies how rtlog is installed.
+type installKind int
+
+const (
+	installFresh     installKind = iota // not found on PATH
+	installDefault                      // found at ~/.rt/rtlog (directly or via symlink)
+	installCustom                       // found on PATH at a non-default location
+	installGoInstall                    // found inside GOPATH/bin or GOBIN
+)
+
+// detectBinaryPath finds rtlog on PATH and classifies the install type.
+// Returns the kind and the resolved (real) path to the binary.
+// For installFresh, the path is empty.
+func detectBinaryPath(home string) (installKind, string) {
+	found, err := exec.LookPath("rtlog")
+	if err != nil {
+		return installFresh, ""
+	}
+
+	resolved, err := filepath.EvalSymlinks(found)
+	if err != nil {
+		return installFresh, ""
+	}
+
+	// Check go install first (highest priority)
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		gopath = filepath.Join(home, "go")
+	}
+	gobin := os.Getenv("GOBIN")
+	if update.IsGoInstalled(resolved, gopath, gobin) {
+		return installGoInstall, resolved
+	}
+
+	// Check if it resolves to the default ~/.rt/rtlog
+	defaultBin := filepath.Join(home, ".rt", "rtlog")
+	if resolved == defaultBin {
+		return installDefault, resolved
+	}
+
+	return installCustom, resolved
 }
 
 // setupShellRc ensures PATH and hook source lines are in the given rc file.

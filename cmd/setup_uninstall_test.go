@@ -256,3 +256,50 @@ func TestSetupShellRcIdempotent(t *testing.T) {
 		t.Errorf("setupShellRc modified already-configured file:\n%s", result)
 	}
 }
+
+func TestSetupCleanup(t *testing.T) {
+	rtDir := t.TempDir()
+
+	// Create denylist files (should be deleted)
+	denylist := []string{
+		"hook.zsh", "hook.bash",
+		"hook-noninteractive.zsh", "hook-noninteractive.bash",
+		"bash-preexec.sh", "last-update-check", "update-available",
+	}
+	for _, name := range denylist {
+		os.WriteFile(filepath.Join(rtDir, name), []byte("old"), 0644)
+	}
+
+	// Create preserved files (should survive)
+	os.MkdirAll(filepath.Join(rtDir, "logs"), 0755)
+	os.WriteFile(filepath.Join(rtDir, "logs", "test.db"), []byte("db"), 0644)
+	os.WriteFile(filepath.Join(rtDir, "state"), []byte("engagement=test\n"), 0644)
+	os.WriteFile(filepath.Join(rtDir, "tools.conf"), []byte("nmap\n"), 0644)
+	os.WriteFile(filepath.Join(rtDir, "extract.conf"), []byte("nmap positional\n"), 0644)
+	os.WriteFile(filepath.Join(rtDir, "rtlog"), []byte("binary"), 0755)
+
+	setupCleanup(rtDir)
+
+	// Denylist files should be gone
+	for _, name := range denylist {
+		if _, err := os.Stat(filepath.Join(rtDir, name)); !os.IsNotExist(err) {
+			t.Errorf("denylist file %s was not deleted", name)
+		}
+	}
+
+	// Preserved files should exist
+	for _, name := range []string{"state", "tools.conf", "extract.conf", "rtlog"} {
+		if _, err := os.Stat(filepath.Join(rtDir, name)); err != nil {
+			t.Errorf("preserved file %s was deleted: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(rtDir, "logs", "test.db")); err != nil {
+		t.Error("logs/test.db was deleted")
+	}
+}
+
+func TestSetupCleanup_MissingFiles(t *testing.T) {
+	// Cleanup should not error on a fresh directory with no files to delete
+	rtDir := t.TempDir()
+	setupCleanup(rtDir) // should not panic or error
+}
