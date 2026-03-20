@@ -119,6 +119,17 @@ Two search modes:
 4. Display highlighting uses the compiled regex directly (already supported by `FmtEntryHighlight`)
 5. `-r` and keyword argument are mutually exclusive
 
+### Interactive TUI (`internal/display/selector.go`)
+
+The TUI's type-to-filter currently uses literal substring matching via `ApplyFilters()`. Add a regex toggle:
+
+- **Ctrl+R** toggles between literal and regex mode
+- Filter bar shows mode indicator: `▸ pattern_` (literal) vs `▸ /pattern/_ [regex]` (regex)
+- In regex mode, `ApplyFilters` compiles the filter with `regexp.Compile`
+  - If the pattern is valid: filter entries by regex match across the same 5 fields
+  - If the pattern is invalid (incomplete mid-typing): show `[invalid regex]` in the filter bar, keep showing previous valid results (don't clear the list)
+- Ctrl+R with an empty filter just toggles the mode indicator
+
 ## Testing
 
 ### `internal/filter/filter_test.go`
@@ -146,6 +157,12 @@ Two search modes:
 - Invalid `-r` regex produces error
 - Zero-match scenario prints message, no file created
 - Comma-separated `--tool` and `--tag` parsing
+
+### `internal/display/selector_test.go`
+
+- `ApplyFilters` in regex mode matches entries by regex
+- `ApplyFilters` in regex mode with invalid pattern returns previous valid results
+- `ApplyFilters` in literal mode unchanged behavior
 
 ### `cmd/show_test.go`
 
