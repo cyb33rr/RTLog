@@ -44,13 +44,13 @@ var rmCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		defer d.Close()
+
 		count, err := d.Count()
 		if err != nil {
-			d.Close()
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		d.Close()
 
 		if !rmYes {
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
