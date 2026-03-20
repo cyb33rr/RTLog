@@ -203,7 +203,9 @@ func TestSetupShellRcBash(t *testing.T) {
 	// Create an existing .bashrc
 	os.WriteFile(bashrc, []byte("# my bash config\n"), 0644)
 
-	setupShellRc(bashrc, "hook.bash", ".bashrc")
+	if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -228,7 +230,9 @@ func TestSetupShellRcIdempotent(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, "hook.bash", ".bashrc")
+	if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -529,7 +533,9 @@ func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, "hook.bash", ".bashrc")
+	if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -555,7 +561,9 @@ func TestSetupShellRcMigratesRepoSourceLines(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	setupShellRc(zshrc, "hook.zsh", ".zshrc")
+	if err := setupShellRc(zshrc, "hook.zsh", ".zshrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -590,7 +598,9 @@ func TestSetupShellRcMigratesUntaggedExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, "hook.bash", ".bashrc")
+	if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -652,7 +662,9 @@ func TestSetupShellRcRemovesTaggedExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, "hook.bash", ".bashrc")
+	if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -678,7 +690,9 @@ func TestSetupShellRcRemovesUntaggedGoBinExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	setupShellRc(zshrc, "hook.zsh", ".zshrc")
+	if err := setupShellRc(zshrc, "hook.zsh", ".zshrc"); err != nil {
+		t.Fatalf("setupShellRc: %v", err)
+	}
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -691,7 +705,7 @@ func TestSetupShellRcRemovesUntaggedGoBinExport(t *testing.T) {
 	}
 }
 
-func TestIsGoInstall(t *testing.T) {
+func TestIsGoInstallPathLogic(t *testing.T) {
 	// Test the path comparison logic used by isGoInstall.
 	// resolveGoBinDir gives a known go bin directory; we then verify HasPrefix logic.
 	home := t.TempDir()
