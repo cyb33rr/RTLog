@@ -30,18 +30,18 @@ func TestFmtCompactBasic(t *testing.T) {
 	if !strings.Contains(got, "nmap -sV 10.0.0.1") {
 		t.Errorf("missing command in %q", got)
 	}
-	// When note exists, note replaces exit+dur+tag but [+out] stays
+	// When note exists, note replaces exit+dur; tag shows in fixed slot
 	if !strings.Contains(got, "# port scan") {
 		t.Errorf("missing note in %q", got)
 	}
 	if strings.Contains(got, "exit:0") {
 		t.Errorf("should not have exit code when note exists: %q", got)
 	}
-	if strings.Contains(got, "[recon]") {
-		t.Errorf("should not have tag when note exists: %q", got)
+	if !strings.Contains(got, "[recon]") {
+		t.Errorf("missing tag in fixed slot when note exists: %q", got)
 	}
-	if !strings.Contains(got, "[+out]") {
-		t.Errorf("missing [+out] when note exists with output: %q", got)
+	if strings.Contains(got, "[+out]") {
+		t.Errorf("should not have [+out] indicator: %q", got)
 	}
 }
 
@@ -60,7 +60,7 @@ func TestFmtCompactEmptyOptionalFields(t *testing.T) {
 	got := stripAnsi(FmtCompact(entry, 120))
 
 	if strings.Contains(got, "[") {
-		t.Errorf("should not have any brackets when tag and out are empty: %q", got)
+		t.Errorf("should not have any brackets when tag is empty: %q", got)
 	}
 	if strings.Contains(got, "#") {
 		t.Errorf("should not have note marker when note is empty: %q", got)
@@ -153,8 +153,9 @@ func TestFmtCompactRightAlignsPadding(t *testing.T) {
 	if len([]rune(got)) != 60 {
 		t.Errorf("expected 60 visible chars, got %d: %q", len([]rune(got)), got)
 	}
-	// Metadata should be at the right edge — line ends with duration
-	if !strings.HasSuffix(strings.TrimRight(got, " "), "0.1s") {
+	// Metadata should be at the right edge — line ends with empty tag padding
+	trimmed := strings.TrimRight(got, " ")
+	if !strings.HasSuffix(trimmed, "0.1s") {
 		t.Errorf("metadata not right-aligned: %q", got)
 	}
 }
