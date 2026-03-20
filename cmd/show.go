@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cyb33rr/rtlog/internal/display"
+	"github.com/cyb33rr/rtlog/internal/filter"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/spf13/cobra"
 )
@@ -15,6 +16,7 @@ import (
 var showToday bool
 var showDate string
 var showOutput bool
+var showRegex string
 
 var showCmd = &cobra.Command{
 	Use:   "show [keyword]",
@@ -47,6 +49,11 @@ var showCmd = &cobra.Command{
 		keyword := ""
 		if len(args) > 0 {
 			keyword = args[0]
+		}
+
+		if keyword != "" && showRegex != "" {
+			fmt.Fprintf(os.Stderr, "Cannot use keyword argument with -r flag\n")
+			os.Exit(1)
 		}
 
 		// --- Keyword search branch ---
@@ -93,6 +100,72 @@ var showCmd = &cobra.Command{
 					display.PrintOutputBlock(m, true)
 				} else {
 					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth))
+				}
+			}
+
+			fmt.Println()
+			fmt.Printf("%s\n", display.Colorize(
+				fmt.Sprintf("%d result(s)", len(matches)),
+				display.Dim,
+			))
+			return
+		}
+
+		// --- Regex search branch ---
+		if showRegex != "" {
+			re, err := regexp.Compile(showRegex)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Invalid regex: %v\n", err)
+				os.Exit(1)
+			}
+
+			var dateLabel string
+			var allEntries []logfile.LogEntry
+			if showDate != "" {
+				allEntries, err = d.LoadByDate(showDate)
+				dateLabel = showDate
+			} else if showToday {
+				today := time.Now().UTC().Format("2006-01-02")
+				allEntries, err = d.LoadByDate(today)
+				dateLabel = today
+			} else {
+				allEntries, err = d.LoadAll()
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error loading entries: %v\n", err)
+				os.Exit(1)
+			}
+
+			matches, err := filter.MatchRegex(allEntries, showRegex)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error applying regex: %v\n", err)
+				os.Exit(1)
+			}
+
+			if len(matches) == 0 {
+				label := ""
+				if dateLabel != "" {
+					label = fmt.Sprintf(" for %s", dateLabel)
+				}
+				fmt.Printf("No matches for regex '%s'%s in %s\n", showRegex, label, engName)
+				return
+			}
+
+			header := fmt.Sprintf("--- %d match(es) for regex '%s' in %s ---", len(matches), showRegex, engName)
+			if dateLabel != "" {
+				header += fmt.Sprintf("  [%s]", dateLabel)
+			}
+			fmt.Println(display.Colorize(header, display.Bold))
+			fmt.Println()
+
+			idxWidth := len(fmt.Sprintf("%d", len(matches)))
+			for i, entry := range matches {
+				m := logfile.ToMap(entry)
+				if showOutput {
+					fmt.Println(display.FmtEntryHighlight(m, re, i+1, idxWidth, false))
+					display.PrintOutputBlock(m, true)
+				} else {
+					fmt.Println(display.FmtEntryHighlight(m, re, i+1, idxWidth))
 				}
 			}
 
@@ -187,6 +260,7 @@ func init() {
 	showCmd.Flags().BoolVar(&showToday, "today", false, "show only today's entries")
 	showCmd.Flags().StringVar(&showDate, "date", "", "show entries for a specific date (YYYY-MM-DD)")
 	showCmd.Flags().BoolVarP(&showOutput, "all", "a", false, "print all entries with their output (non-interactive)")
+	showCmd.Flags().StringVarP(&showRegex, "regex", "r", "", "search by regex pattern across cmd, tool, cwd, tag, note")
 	showCmd.MarkFlagsMutuallyExclusive("today", "date")
 	rootCmd.AddCommand(showCmd)
 }
