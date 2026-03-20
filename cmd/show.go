@@ -231,6 +231,12 @@ var showCmd = &cobra.Command{
 		} else if display.IsTTY {
 			// Interactive TUI: entries in chronological order (oldest first)
 			sel := display.NewSelector(entryMaps)
+			sel.OnDelete = func(id int64) error {
+				return d.Delete(id)
+			}
+			sel.OnUpdate = func(id int64, fields map[string]string) error {
+				return d.Update(id, fields)
+			}
 			if err := sel.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
