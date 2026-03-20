@@ -104,7 +104,7 @@ func PrintOutputBlock(entry Entry, stripAnsi bool) {
 // Width is the terminal width used to right-align metadata and truncate the command.
 // When metadata alone exceeds the available width, the minimum 10-char command budget
 // and 2-char gutter are enforced; the caller's render loop is expected to clip the result.
-// Format: <timestamp zone>  <command><padding><exit:N  Ns  [tag]  # note  [+out]>
+// Format: <timestamp zone>  <command><padding><exit:N  Ns  [tag(10)]  |  # note  [tag(10)]>
 func FmtCompact(entry Entry, width int) string {
 	// Timestamp zone: always 10 visible chars (8-char time + 2-space gap, or 10 spaces)
 	tsRaw, _ := entry["ts"].(string)
@@ -121,18 +121,24 @@ func FmtCompact(entry Entry, width int) string {
 	cmd = strings.ReplaceAll(cmd, "\n", " ")
 
 	// Build metadata suffix
-	// exit(8) + "  " + dur(6) = 16 fixed chars before tag/note
-	outIndicator := "       " // 7 spaces: same width as "[+out] "
-	if out, _ := entry["out"].(string); out != "" {
-		outIndicator = Colorize("[+out]", Dim) + " "
+	// exit(8) + "  " + dur(6) = 16 fixed chars before tag slot
+	tag := getString(entry, "tag", "")
+	var tagSlot string
+	if tag != "" {
+		// Truncate tag to fit in 8 chars (10 - 2 for brackets), pad to 10 visible
+		tagText := truncateText(tag, 8)
+		raw := fmt.Sprintf("[%s]", tagText)
+		tagSlot = Colorize(raw, Yellow) + strings.Repeat(" ", 10-len([]rune(raw)))
+	} else {
+		tagSlot = "          " // 10 spaces
 	}
 
 	note := getString(entry, "note", "")
 	var meta string
 	if note != "" {
-		// Note replaces exit+dur+tag, left-aligned to exit column, [+out] stays
+		// Note replaces exit+dur, left-aligned to exit column; tag slot stays
 		noteText := "# " + truncateText(note, 15)
-		meta = fmt.Sprintf("%-18s", noteText) + outIndicator
+		meta = fmt.Sprintf("%-18s", noteText) + tagSlot
 	} else {
 		// No note: show full metadata
 		exitCode := getInt(entry, "exit", -1)
@@ -147,13 +153,7 @@ func FmtCompact(entry Entry, width int) string {
 		dur := getFloat(entry, "dur", 0)
 		durStr := Colorize(fmt.Sprintf("%-6s", fmt.Sprintf("%gs", dur)), Dim)
 
-		tag := getString(entry, "tag", "")
-		tagStr := ""
-		if tag != "" {
-			tagStr = "  " + Colorize(fmt.Sprintf("[%s]", tag), Yellow)
-		}
-
-		meta = exitStr + "  " + durStr + tagStr + "  " + outIndicator
+		meta = exitStr + "  " + durStr + "  " + tagSlot
 	}
 	metaWidth := visibleLen(meta)
 
