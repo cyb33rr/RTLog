@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -36,17 +37,14 @@ var setupCmd = &cobra.Command{
 	Short: "Configure rtlog shell hooks and environment",
 	Long: `Idempotent setup that configures zsh and/or bash for rtlog.
 
-Requires Go toolchain (binary installed via 'go install').
-
 Steps performed:
   1. Create ~/.rt/logs/
   2. Clean up stale files from previous versions
   3. Migrate old installs (remove ~/.rt/rtlog binary, ~/.local/bin symlink)
   4. Write embedded hook files (interactive + non-interactive) and config to ~/.rt/
-  5. Resolve Go bin directory and ensure it is on PATH
-  6. Configure ~/.zshrc and/or ~/.bashrc (hook source line; Go bin PATH export)
-  7. Configure ~/.zshenv for non-interactive zsh capture
-  8. Export BASH_ENV in shell rc files for non-interactive bash capture`,
+  5. Configure ~/.zshrc and/or ~/.bashrc (hook source line)
+  6. Configure ~/.zshenv for non-interactive zsh capture
+  7. Export BASH_ENV in shell rc files for non-interactive bash capture`,
 	Args: cobra.NoArgs,
 	Run:  runSetup,
 }
@@ -97,20 +95,17 @@ func setupCore(home string) error {
 		}
 	}
 
-	// 5. Resolve Go bin dir
-	_, goBinExportLine := resolveGoBinDir(home, os.Getenv("GOPATH"), os.Getenv("GOBIN"))
-
-	// 6. Configure shell rc files
+	// 5. Configure shell rc files
 	zshrcExists := fileExists(zshrc)
 	bashrcExists := fileExists(bashrc)
 
 	if zshrcExists {
-		if err := setupShellRc(zshrc, goBinExportLine, "hook.zsh", ".zshrc"); err != nil {
+		if err := setupShellRc(zshrc, "hook.zsh", ".zshrc"); err != nil {
 			return err
 		}
 	}
 	if bashrcExists {
-		if err := setupShellRc(bashrc, goBinExportLine, "hook.bash", ".bashrc"); err != nil {
+		if err := setupShellRc(bashrc, "hook.bash", ".bashrc"); err != nil {
 			return err
 		}
 	}
@@ -119,11 +114,11 @@ func setupCore(home string) error {
 		fmt.Println("     Create your rc file and re-run 'rtlog setup'")
 	}
 
-	// 7. Configure .zshenv for non-interactive zsh capture
+	// 6. Configure .zshenv for non-interactive zsh capture
 	zshenv := filepath.Join(home, ".zshenv")
 	setupZshenv(zshenv, rtDir)
 
-	// 8. BASH_ENV for non-interactive bash capture
+	// 7. BASH_ENV for non-interactive bash capture
 	if zshrcExists {
 		setupBashEnv(zshrc, rtDir, ".zshrc")
 	}
@@ -147,6 +142,10 @@ func runSetup(cmd *cobra.Command, args []string) {
 	if err := setupCore(home); err != nil {
 		fmt.Fprintf(os.Stderr, "[!]  %v\n", err)
 		os.Exit(1)
+	}
+
+	if _, err := exec.LookPath("rtlog"); err != nil {
+		fmt.Println("[!]  Warning: rtlog is not on your PATH — hooks won't work until you add it.")
 	}
 
 	zshrc := filepath.Join(home, ".zshrc")
@@ -305,9 +304,9 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// setupShellRc ensures hook source line and optional Go bin PATH export are in the given rc file.
+// setupShellRc ensures the hook source line is in the given rc file and removes legacy PATH exports.
 // hookFile is "hook.zsh" or "hook.bash". rcName is ".zshrc" or ".bashrc" (for messages).
-func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
+func setupShellRc(rcFile, hookFile, rcName string) error {
 	sourceLine := fmt.Sprintf("source %s/.rt/%s", "$HOME", hookFile)
 
 	content, err := os.ReadFile(rcFile)
@@ -318,16 +317,25 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
 	hasSourceLine := false
-	hasGoBinExport := false
 	migrated := false
-
-	untagged := strings.TrimSuffix(goBinExportLine, rtlogTag)
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		// Migration: remove old ~/.local/bin PATH export
 		if !strings.HasPrefix(trimmed, "#") && trimmed == `export PATH="$HOME/.local/bin:$PATH"` {
+			migrated = true
+			continue
+		}
+
+		// Migration: remove Go bin PATH export (tagged lines, any path)
+		if strings.Contains(trimmed, "export PATH=") && strings.HasSuffix(trimmed, rtlogTag) {
+			migrated = true
+			continue
+		}
+
+		// Migration: remove untagged default Go bin PATH export (backward compat)
+		if trimmed == `export PATH="$HOME/go/bin:$PATH"` {
 			migrated = true
 			continue
 		}
@@ -343,35 +351,12 @@ func setupShellRc(rcFile, goBinExportLine, hookFile, rcName string) error {
 			hasSourceLine = true
 		}
 
-		// Check for existing Go bin PATH export (tagged or untagged)
-		if goBinExportLine != "" && !strings.HasPrefix(trimmed, "#") {
-			if trimmed == goBinExportLine {
-				hasGoBinExport = true
-			} else if trimmed == untagged {
-				// Migration: replace untagged with tagged version
-				hasGoBinExport = true
-				migrated = true
-				newLines = append(newLines, goBinExportLine)
-				continue
-			}
-		}
-
 		newLines = append(newLines, line)
 	}
 
 	if migrated {
 		newLines = collapseBlankLines(newLines)
 		fmt.Printf("[~]  Migrated old config lines in %s\n", rcName)
-	}
-
-	// Append Go bin PATH export if needed
-	if goBinExportLine != "" {
-		if !hasGoBinExport {
-			newLines = append(newLines, "", goBinExportLine)
-			fmt.Printf("[+]  Added Go bin to PATH in %s\n", rcName)
-		} else {
-			fmt.Printf("[ok] Go bin already in PATH\n")
-		}
 	}
 
 	// Append source line if missing
