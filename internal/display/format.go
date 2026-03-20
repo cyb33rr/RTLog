@@ -13,8 +13,8 @@ import (
 type Entry = map[string]interface{}
 
 // FmtEntry formats a single log entry for display.
-// Format: idx  HH:MM:SS  tool  cmd  exit:N  Ns  [tag]  # note  [+out]
-func FmtEntry(entry Entry, index, idxWidth int, showOutIndicator ...bool) string {
+// Format: idx  HH:MM:SS  tool  cmd  exit:N  Ns  [tag]  # note
+func FmtEntry(entry Entry, index, idxWidth int) string {
 	// Timestamp
 	tsRaw, _ := entry["ts"].(string)
 	tsStr := formatTimestamp(tsRaw)
@@ -54,24 +54,15 @@ func FmtEntry(entry Entry, index, idxWidth int, showOutIndicator ...bool) string
 		noteStr = fmt.Sprintf("  # %s", note)
 	}
 
-	// Output indicator
-	outIndicator := ""
-	hideOut := len(showOutIndicator) > 0 && !showOutIndicator[0]
-	if !hideOut {
-		if out, _ := entry["out"].(string); out != "" {
-			outIndicator = Colorize(" [+out]", Dim)
-		}
-	}
-
 	// Index
 	idxStr := Colorize(fmt.Sprintf("%*d", idxWidth, index), Dim)
 
-	return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s%s%s", idxStr, tsStr, toolStr, cmd, exitStr, durStr, tagStr, noteStr, outIndicator)
+	return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s%s", idxStr, tsStr, toolStr, cmd, exitStr, durStr, tagStr, noteStr)
 }
 
 // FmtEntryHighlight formats an entry then highlights pattern matches.
-func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int, showOutIndicator ...bool) string {
-	line := FmtEntry(entry, index, idxWidth, showOutIndicator...)
+func FmtEntryHighlight(entry Entry, pattern *regexp.Regexp, index, idxWidth int) string {
+	line := FmtEntry(entry, index, idxWidth)
 	if pattern == nil {
 		return line
 	}
