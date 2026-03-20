@@ -10,7 +10,7 @@ A CLI tool that automatically captures and logs shell commands during penetratio
 - **Output capture** — optionally capture full stdout/stderr for each command
 - **Target extraction** — automatically extract IPs, CIDRs, hostnames, ports, and credentials from logged commands with tool-aware parsing to avoid false positives
 - **Search & analysis** — filter and search logs, view timelines, get tool usage stats
-- **Export** — generate Markdown or CSV reports
+- **Export** — generate Markdown, CSV, or JSONL reports with filtering by tool, tag, and date range
 - **SQLite storage** — logs stored in per-engagement SQLite databases with WAL mode for concurrent access
 - **JSONL import** — migrate legacy JSONL logs to SQLite with deduplication
 
@@ -71,6 +71,8 @@ rtlog export md
 rtlog new <name>         # Create and switch to a new engagement
 rtlog switch <name>      # Switch to an existing engagement
 rtlog list               # List all engagements (* = active)
+rtlog rename <old> <new> # Rename an engagement
+rtlog rm <engagement>    # Delete an entire engagement database
 rtlog status             # Show state overview and engagement statistics
 ```
 
@@ -101,9 +103,25 @@ rtlog show --today       # Today's entries only
 rtlog show --date 2026-01-15
 rtlog show -a            # Print all entries with output (non-interactive)
 rtlog show nmap          # Search entries matching keyword (non-interactive)
+rtlog show -r <regex>    # Regex search across cmd, tool, cwd, tag, note
 rtlog show --today nmap  # Search within today's entries
 rtlog show -e <name>     # Show a different engagement
 ```
+
+**Interactive mode keybindings:**
+
+| Key | Action |
+|---|---|
+| `↑`/`↓` | Navigate entries (scroll output when expanded) |
+| `Enter` | Expand/collapse captured output |
+| `Tab` | Cycle tag filter |
+| `Ctrl+E` | Edit entry (tag or note) |
+| `Ctrl+D` | Delete entry |
+| `Ctrl+F` | Toggle failure-only filter |
+| `Ctrl+R` | Toggle regex filter mode |
+| `Esc` | Quit |
+
+Type to filter entries by text (case-insensitive substring match across cmd, tool, tag, note, cwd).
 
 ### Analysis
 
@@ -115,18 +133,32 @@ rtlog targets            # Extract IPs, hostnames, ports, credentials
 ### Export & Import
 
 ```bash
-rtlog export md          # Markdown table (default: <engagement>.md)
-rtlog export csv         # CSV file (default: <engagement>.csv)
-rtlog export md -o report.md
+rtlog export md              # Markdown table (default: <engagement>.md)
+rtlog export csv             # CSV file (default: <engagement>.csv)
+rtlog export jsonl           # JSONL for scripting (default: <engagement>.jsonl)
+rtlog export md -o report.md # Custom output path
 
-rtlog import old.jsonl   # Import legacy JSONL log files into SQLite
+# Filter exports by tool, tag, date, or date range
+rtlog export md --tool nmap,nxc
+rtlog export csv --tag recon,privesc
+rtlog export md --date 2026-01-15
+rtlog export md --from 2026-01-01 --to 2026-01-31
+
+rtlog import old.jsonl       # Import legacy JSONL log files into SQLite
 ```
 
 ### Cleanup
 
 ```bash
+rtlog delete <id>        # Delete a single entry by ID
 rtlog clear              # Delete all entries from the active engagement
 rtlog clear -y           # Skip confirmation
+```
+
+### Update
+
+```bash
+rtlog update             # Update rtlog via go install
 ```
 
 ### Global Flags
