@@ -114,3 +114,37 @@ func TestCollectTagsNoTags(t *testing.T) {
 		t.Errorf("got %d tags, want 0 for entries with no tags", len(tags))
 	}
 }
+
+func TestApplyFiltersRegexMode(t *testing.T) {
+	entries := makeEntries()
+	filtered := ApplyFilters(entries, `10\.0\.0\.\d+`, "", false, true)
+	if len(filtered) != 4 {
+		t.Errorf("got %d, want 4 (entries 0,2,3,4 have matching IPs)", len(filtered))
+	}
+}
+
+func TestApplyFiltersRegexModeInvalidPattern(t *testing.T) {
+	entries := makeEntries()
+	// Invalid regex skips text filter — shows all entries (spec: keep previous valid results)
+	filtered := ApplyFilters(entries, `[invalid`, "", false, true)
+	if len(filtered) != 5 {
+		t.Errorf("got %d, want 5 (invalid regex skips text filter, shows all)", len(filtered))
+	}
+}
+
+func TestApplyFiltersRegexModeMatchesTool(t *testing.T) {
+	entries := makeEntries()
+	filtered := ApplyFilters(entries, `^nmap$`, "", false, true)
+	if len(filtered) != 2 {
+		t.Errorf("got %d, want 2 (two nmap entries)", len(filtered))
+	}
+}
+
+func TestApplyFiltersLiteralModeUnchanged(t *testing.T) {
+	entries := makeEntries()
+	// Literal mode (useRegex=false) should work as before
+	filtered := ApplyFilters(entries, "nmap", "", false, false)
+	if len(filtered) != 2 {
+		t.Errorf("got %d, want 2 (two nmap entries, literal mode)", len(filtered))
+	}
+}

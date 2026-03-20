@@ -3,6 +3,7 @@ package display
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,9 +14,8 @@ import (
 // textFilter is case-insensitive substring across cmd, tool, tag, note, cwd.
 // tagFilter is exact match on tag ("" = no filter).
 // failOnly filters to non-zero exit codes.
-func ApplyFilters(entries []Entry, textFilter, tagFilter string, failOnly bool) []int {
+func ApplyFilters(entries []Entry, textFilter, tagFilter string, failOnly bool, useRegex ...bool) []int {
 	var result []int
-	lower := strings.ToLower(textFilter)
 	for i, e := range entries {
 		if tagFilter != "" {
 			if getString(e, "tag", "") != tagFilter {
@@ -27,19 +27,35 @@ func ApplyFilters(entries []Entry, textFilter, tagFilter string, failOnly bool) 
 				continue
 			}
 		}
-		if lower != "" {
+		if textFilter != "" {
 			fields := []string{
-				strings.ToLower(getString(e, "cmd", "")),
-				strings.ToLower(getString(e, "tool", "")),
-				strings.ToLower(getString(e, "tag", "")),
-				strings.ToLower(getString(e, "note", "")),
-				strings.ToLower(getString(e, "cwd", "")),
+				getString(e, "cmd", ""),
+				getString(e, "tool", ""),
+				getString(e, "tag", ""),
+				getString(e, "note", ""),
+				getString(e, "cwd", ""),
 			}
 			found := false
-			for _, f := range fields {
-				if strings.Contains(f, lower) {
+			if len(useRegex) > 0 && useRegex[0] {
+				re, err := regexp.Compile(textFilter)
+				if err != nil {
+					// Invalid regex: skip text filter (keep all entries visible)
 					found = true
-					break
+				} else {
+					for _, f := range fields {
+						if re.MatchString(f) {
+							found = true
+							break
+						}
+					}
+				}
+			} else {
+				lower := strings.ToLower(textFilter)
+				for _, f := range fields {
+					if strings.Contains(strings.ToLower(f), lower) {
+						found = true
+						break
+					}
 				}
 			}
 			if !found {
@@ -84,6 +100,7 @@ type Selector struct {
 	filter    string // text filter input
 	tagFilter string // "" = all
 	failOnly  bool
+	useRegex  bool // regex mode toggle
 	filtered  []int    // indices into entries matching current filters
 	allTags   []string // unique tags for Tab cycling
 	tagIdx    int      // current position in tag cycle (0 = "all")
@@ -95,7 +112,7 @@ func NewSelector(entries []Entry) *Selector {
 		entries: entries,
 	}
 	s.allTags = CollectTags(entries)
-	s.filtered = ApplyFilters(entries, "", "", false)
+	s.filtered = ApplyFilters(entries, "", "", false, false)
 	if len(s.filtered) > 0 {
 		s.cursor = len(s.filtered) - 1
 	}
@@ -104,7 +121,7 @@ func NewSelector(entries []Entry) *Selector {
 
 // applyAndReset rebuilds the filtered slice and resets cursor to newest.
 func (s *Selector) applyAndReset() {
-	s.filtered = ApplyFilters(s.entries, s.filter, s.tagFilter, s.failOnly)
+	s.filtered = ApplyFilters(s.entries, s.filter, s.tagFilter, s.failOnly, s.useRegex)
 	if len(s.filtered) > 0 {
 		s.cursor = len(s.filtered) - 1
 	} else {
@@ -135,7 +152,19 @@ func (s *Selector) renderFilterBar() string {
 		parts = append(parts, fmt.Sprintf("%d entries", total))
 	}
 
-	parts = append(parts, fmt.Sprintf("▸ %s_", s.filter))
+	if s.useRegex {
+		if s.filter != "" {
+			if _, err := regexp.Compile(s.filter); err != nil {
+				parts = append(parts, fmt.Sprintf("▸ /%s/_ %s", s.filter, Colorize("[invalid regex]", Red)))
+			} else {
+				parts = append(parts, fmt.Sprintf("▸ /%s/_ %s", s.filter, Colorize("[regex]", Cyan)))
+			}
+		} else {
+			parts = append(parts, fmt.Sprintf("▸ //_  %s", Colorize("[regex]", Cyan)))
+		}
+	} else {
+		parts = append(parts, fmt.Sprintf("▸ %s_", s.filter))
+	}
 
 	return "  " + strings.Join(parts, "   ")
 }
@@ -205,6 +234,9 @@ func (s *Selector) Run() error {
 				}
 			case 6: // Ctrl+F — toggle failed only
 				s.failOnly = !s.failOnly
+				s.applyAndReset()
+			case 18: // Ctrl+R — toggle regex mode
+				s.useRegex = !s.useRegex
 				s.applyAndReset()
 			case 127, 8: // Backspace (DEL or BS)
 				if len(s.filter) > 0 {
