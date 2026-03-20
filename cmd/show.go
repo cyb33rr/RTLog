@@ -96,7 +96,7 @@ var showCmd = &cobra.Command{
 			for i, entry := range matches {
 				m := logfile.ToMap(entry)
 				if showOutput {
-					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth, false))
+					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth))
 					display.PrintOutputBlock(m, true)
 				} else {
 					fmt.Println(display.FmtEntryHighlight(m, pattern, i+1, idxWidth))
@@ -162,7 +162,7 @@ var showCmd = &cobra.Command{
 			for i, entry := range matches {
 				m := logfile.ToMap(entry)
 				if showOutput {
-					fmt.Println(display.FmtEntryHighlight(m, re, i+1, idxWidth, false))
+					fmt.Println(display.FmtEntryHighlight(m, re, i+1, idxWidth))
 					display.PrintOutputBlock(m, true)
 				} else {
 					fmt.Println(display.FmtEntryHighlight(m, re, i+1, idxWidth))
@@ -225,7 +225,7 @@ var showCmd = &cobra.Command{
 			fmt.Println(display.Colorize(header, display.Bold))
 			fmt.Println()
 			for i, m := range entryMaps {
-				fmt.Println(display.FmtEntry(m, origIdx(i), idxWidth, false))
+				fmt.Println(display.FmtEntry(m, origIdx(i), idxWidth))
 				display.PrintOutputBlock(m, true)
 			}
 		} else if display.IsTTY {
