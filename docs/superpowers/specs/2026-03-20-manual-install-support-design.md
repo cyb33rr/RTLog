@@ -18,79 +18,109 @@ RTLog's setup, update, and uninstall commands assume the binary was installed vi
 Runtime detection of install method. No persistent state.
 
 - Resolve `os.Executable()`, follow symlinks via `filepath.EvalSymlinks`
-- Determine Go bin directory: `GOBIN` > `$GOPATH/bin` > `~/go/bin`
+- Determine Go bin directory via `resolveGoBinDir` (reuse existing helper — do NOT duplicate)
+- Resolve the Go bin directory through `filepath.EvalSymlinks` as well (handles symlinked `~/go` etc.)
 - Return `true` if the executable path starts with the resolved Go bin directory
+- On any error from `os.Executable()` or `filepath.EvalSymlinks`, return `false` (safe default — treats as manual install)
 
-Lives in `cmd/` alongside the existing `resolveGoBinDir` helper.
+Lives in `cmd/helpers.go` (new file). `resolveGoBinDir` stays in `cmd/setup.go` — it is still needed by uninstall and `isGoInstall()`.
+
+**Known limitation:** If the user changes `GOBIN`/`GOPATH` after `go install`, the runtime check may return `false` (false negative). The fallback behavior (manual update message) is not harmful.
 
 ### 2. Setup changes
 
-**Remove Go bin PATH export logic:**
+**Remove Go bin PATH export logic from `setupCore`:**
 
-- Remove the `resolveGoBinDir` call from `setupCore`
-- Remove the `goBinExportLine` parameter from `setupShellRc`
-- Remove all code in `setupShellRc` that checks for, adds, or migrates Go bin PATH export lines
+- Remove the `resolveGoBinDir` call from `setupCore` (line 101)
+- Remove the `goBinExportLine` parameter from `setupShellRc` — signature becomes `setupShellRc(rcFile, hookFile, rcName string)`
+- Update both call sites in `setupCore` (lines 108, 113)
 
-**Add legacy PATH line cleanup to `setupShellRc`:**
+**Simplify `setupShellRc` line-scanning loop:**
 
-- Remove lines matching `# added by rtlog` tag (the old tagged PATH exports)
-- Remove untagged `export PATH="$HOME/go/bin:$PATH"` lines (backward compat)
-- Remove `export PATH="$HOME/.local/bin:$PATH"` lines (already handled)
-- This runs as part of the existing line-scanning loop, before the source line check
+- Remove all code that checks for, adds, or migrates Go bin PATH export lines (the `hasGoBinExport` variable, the `untagged` variable, the tagged/untagged checks, the append block)
+- **Convert existing migration removals to legacy cleanup** using hardcoded pattern matching (mirroring `uninstallCleanShellRc` lines 122-129):
+  - Tagged lines: remove any line where `strings.Contains(trimmed, "export PATH=") && strings.HasSuffix(trimmed, rtlogTag)`
+  - Untagged default: remove lines matching literal `export PATH="$HOME/go/bin:$PATH"`
+  - The existing `export PATH="$HOME/.local/bin:$PATH"` removal stays
+- Keep the legacy source line removal (`isLegacySourceLine`)
+- Keep the hook source line check and append
 
-**Add post-setup PATH warning:**
+**Add post-setup PATH warning in `runSetup` (NOT in `setupCore`):**
 
-- After all setup steps complete (end of `setupCore`), call `exec.LookPath("rtlog")`
+- After `setupCore` returns successfully, call `exec.LookPath("rtlog")`
 - If not found, print:
   ```
   [!]  Warning: rtlog is not on your PATH — hooks won't work until you add it.
   ```
+- This lives in `runSetup` to avoid spurious warnings during `rtlog update` (where the binary is already on PATH via Go bin)
 
-**Order of operations in `setupShellRc`:**
+**Update `setupCmd` descriptions:**
 
-1. Scan lines, removing legacy source lines and legacy PATH export lines
-2. Add hook source line if missing
-3. (Go bin PATH export is no longer added)
-
-**Post-setup in `setupCore`:**
-
-1. Steps 1-8 as today (minus Go bin PATH)
-2. Remove legacy PATH lines (done inside `setupShellRc`)
-3. Check `exec.LookPath("rtlog")` and warn if not found
-
-**Update command description** in `setupCmd` to remove references to Go toolchain requirement and Go bin PATH.
+- Remove "Requires Go toolchain (binary installed via 'go install')." from `Long`
+- Remove step 5 ("Resolve Go bin directory and ensure it is on PATH")
+- Remove Go bin PATH mention from step 6
+- Renumber remaining steps (1-7 instead of 1-8)
 
 ### 3. Update changes
 
 In `runUpdate`, before running `go install`:
 
 - Call `isGoInstall()`
-- If `false`: print `"rtlog was not installed via go install — update manually with git pull && make build"` and return without error
+- If `false`: print `"rtlog was not installed via go install — update manually with git pull && make build"` and return `nil`
 - If `true`: proceed with `go install` + `setupCore` as today
 
-Update command description to reflect this behavior.
+Update `updateCmd.Long` to mention that manual installs are detected and advised.
 
 ### 4. Uninstall changes
 
-- **No functional changes** — uninstall already removes legacy `# added by rtlog` PATH lines and untagged Go bin PATH lines
-- Update the binary location advice (step 4) to use `isGoInstall()`:
-  - If go-installed: advise `rm <go-bin>/rtlog` as today
-  - If manual: advise user to remove the binary from wherever they placed it (print the resolved `os.Executable()` path)
+**`uninstallCleanShellRc` — no functional changes needed.** It already handles legacy cleanup via:
+- Suffix matching for tagged lines: `strings.HasSuffix(trimmed, rtlogTag)` (line 122)
+- Hardcoded fallback: `export PATH="$HOME/go/bin:$PATH"` (line 126)
+- These catch all historical PATH export variants without needing the exact `goBinExportLine`
+
+The `goBinExportLine` parameter to `uninstallCleanShellRc` is redundant but harmless — leave it for now to minimize churn.
+
+**Binary location advice (lines 66-68):** Use `isGoInstall()`:
+- If go-installed: advise `rm <go-bin>/rtlog` as today
+- If manual: print the resolved `os.Executable()` path and advise user to remove it
+
+### 5. Test changes
+
+Tests in `cmd/setup_uninstall_test.go` affected by the `setupShellRc` signature change:
+
+| Test | Change |
+|------|--------|
+| `TestSetupShellRcGoBinExport` (line 314) | Delete — tests removed functionality |
+| `TestSetupShellRcGoBinExportAlreadyPresent` (line 332) | Delete — tests removed functionality |
+| `TestSetupShellRcNoGoBinExport` (line 352) | Delete — tests removed functionality |
+| `TestSetupShellRcMigratesLocalBinExport` (line 572) | Update — remove `goBinExportLine` param, verify line is removed (not replaced) |
+| `TestSetupShellRcMigratesUntaggedExport` (line 635) | Convert — verify untagged Go bin export is removed entirely |
+| `TestResolveGoBinDir` (line 428) | Keep — `resolveGoBinDir` is still used by uninstall and `isGoInstall()` |
+
+**New tests to add:**
+
+- `TestIsGoInstall` — binary in Go bin dir returns `true`, binary elsewhere returns `false`
+- `TestSetupShellRcRemovesTaggedExport` — tagged `# added by rtlog` PATH lines are removed during setup
+- `TestSetupShellRcRemovesUntaggedGoBinExport` — untagged `export PATH="$HOME/go/bin:$PATH"` is removed
+- `TestUpdateSkipsManualInstall` — `isGoInstall()` false path prints warning and returns
+- `TestRunSetupPathWarning` — warning printed when `rtlog` not on PATH
 
 ## Files changed
 
 | File | Change |
 |------|--------|
-| `cmd/setup.go` | Remove `resolveGoBinDir`, remove `goBinExportLine` from `setupShellRc`, add legacy PATH cleanup, add PATH warning |
+| `cmd/setup.go` | Remove `goBinExportLine` from `setupCore` and `setupShellRc`, convert Go bin export logic to removal-only, update `setupCmd` descriptions |
 | `cmd/update.go` | Add `isGoInstall()` gate before `go install` |
 | `cmd/uninstall.go` | Use `isGoInstall()` for binary location advice |
-| `cmd/helpers.go` (new or existing) | Add `isGoInstall()` helper |
-| `cmd/setup_uninstall_test.go` | Update tests for removed PATH export logic, add tests for `isGoInstall()` and PATH warning |
+| `cmd/helpers.go` (new) | Add `isGoInstall()` helper |
+| `cmd/setup_uninstall_test.go` | Delete 3 tests, update 2 tests, keep `TestResolveGoBinDir`, add 5 new tests |
 
 ## What does NOT change
 
+- `resolveGoBinDir` — stays in `cmd/setup.go`, used by uninstall and `isGoInstall()`
 - Makefile — no `make install` target; users handle binary placement
 - Hook files — no changes to hook.zsh/hook.bash
 - Shell rc source lines — hook sourcing stays as-is
 - PATH management — users are responsible for their own PATH
 - Uninstall legacy cleanup — keeps removing old `# added by rtlog` lines
+- `uninstallCleanShellRc` signature — left as-is to minimize churn
