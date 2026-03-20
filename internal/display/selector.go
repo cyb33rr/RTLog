@@ -10,6 +10,17 @@ import (
 	"golang.org/x/term"
 )
 
+// selectorMode represents the current interaction mode of the Selector.
+type selectorMode int
+
+const (
+	modeNormal        selectorMode = iota
+	modeConfirmDelete              // waiting for y/n
+	modeEditChoose                 // waiting for t/n
+	modeEditTag                    // editing tag value
+	modeEditNote                   // editing note value
+)
+
 // ApplyFilters returns indices into entries that match all active filters.
 // textFilter is case-insensitive substring across cmd, tool, tag, note, cwd.
 // tagFilter is exact match on tag ("" = no filter).
@@ -104,6 +115,14 @@ type Selector struct {
 	filtered  []int    // indices into entries matching current filters
 	allTags   []string // unique tags for Tab cycling
 	tagIdx    int      // current position in tag cycle (0 = "all")
+
+	// Mutation callbacks (nil = feature disabled)
+	OnDelete func(id int64) error
+	OnUpdate func(id int64, fields map[string]string) error
+
+	// Mode state
+	mode    selectorMode
+	editBuf string // buffer for inline editing in modeEditTag/modeEditNote
 }
 
 // NewSelector creates a Selector for the given entries (chronological order, oldest first).
@@ -134,6 +153,19 @@ func (s *Selector) applyAndReset() {
 
 // renderFilterBar builds the filter bar string.
 func (s *Selector) renderFilterBar() string {
+	switch s.mode {
+	case modeConfirmDelete:
+		id := s.selectedID()
+		return fmt.Sprintf("  Delete entry #%d? (y/n)", id)
+	case modeEditChoose:
+		return "  Edit: (t)ag or (n)ote?  [Esc cancel]"
+	case modeEditTag:
+		return fmt.Sprintf("  Tag: %s_  [Enter save, Esc cancel]", s.editBuf)
+	case modeEditNote:
+		return fmt.Sprintf("  Note: %s_  [Enter save, Esc cancel]", s.editBuf)
+	}
+
+	// modeNormal — original filter bar
 	var parts []string
 
 	if s.tagFilter != "" {
@@ -167,6 +199,83 @@ func (s *Selector) renderFilterBar() string {
 	}
 
 	return "  " + strings.Join(parts, "   ")
+}
+
+// selectedID returns the database ID of the currently selected entry, or -1.
+func (s *Selector) selectedID() int64 {
+	if len(s.filtered) == 0 || s.cursor >= len(s.filtered) {
+		return -1
+	}
+	entry := s.entries[s.filtered[s.cursor]]
+	id, ok := entry["id"].(int64)
+	if !ok {
+		return -1
+	}
+	return id
+}
+
+// handleDelete processes the delete confirmation.
+func (s *Selector) handleDelete() {
+	id := s.selectedID()
+	if id < 0 || s.OnDelete == nil {
+		s.mode = modeNormal
+		return
+	}
+	if err := s.OnDelete(id); err != nil {
+		s.mode = modeNormal
+		return
+	}
+	// Splice entry out of s.entries
+	entryIdx := s.filtered[s.cursor]
+	s.entries = append(s.entries[:entryIdx], s.entries[entryIdx+1:]...)
+	// Rebuild filtered list and adjust cursor
+	s.filtered = ApplyFilters(s.entries, s.filter, s.tagFilter, s.failOnly, s.useRegex)
+	s.allTags = CollectTags(s.entries)
+	if s.cursor >= len(s.filtered) {
+		s.cursor = len(s.filtered) - 1
+	}
+	if s.cursor < 0 {
+		s.cursor = 0
+	}
+	s.expanded = false
+	s.mode = modeNormal
+}
+
+// handleEditSave persists the edit buffer to the database and updates in-memory state.
+func (s *Selector) handleEditSave() {
+	id := s.selectedID()
+	if id < 0 || s.OnUpdate == nil {
+		s.mode = modeNormal
+		return
+	}
+
+	var field string
+	if s.mode == modeEditTag {
+		field = "tag"
+	} else {
+		field = "note"
+	}
+
+	if err := s.OnUpdate(id, map[string]string{field: s.editBuf}); err != nil {
+		s.mode = modeNormal
+		return
+	}
+
+	// Update in-memory entry
+	entryIdx := s.filtered[s.cursor]
+	s.entries[entryIdx][field] = s.editBuf
+
+	// Rebuild filters in case the edit affects visible entries
+	s.filtered = ApplyFilters(s.entries, s.filter, s.tagFilter, s.failOnly, s.useRegex)
+	s.allTags = CollectTags(s.entries)
+	if s.cursor >= len(s.filtered) {
+		s.cursor = len(s.filtered) - 1
+	}
+	if s.cursor < 0 {
+		s.cursor = 0
+	}
+
+	s.mode = modeNormal
 }
 
 // Run enters raw mode and runs the interactive selector loop.
@@ -214,8 +323,52 @@ func (s *Selector) Run() error {
 		}
 
 		if n == 1 {
+			switch s.mode {
+			case modeConfirmDelete:
+				if buf[0] == 'y' || buf[0] == 'Y' {
+					s.handleDelete()
+				} else {
+					s.mode = modeNormal
+				}
+				continue
+
+			case modeEditChoose:
+				switch buf[0] {
+				case 't', 'T':
+					s.editBuf = getString(s.entries[s.filtered[s.cursor]], "tag", "")
+					s.mode = modeEditTag
+				case 'n', 'N':
+					s.editBuf = getString(s.entries[s.filtered[s.cursor]], "note", "")
+					s.mode = modeEditNote
+				case 27: // Esc
+					s.mode = modeNormal
+				default:
+					s.mode = modeNormal
+				}
+				continue
+
+			case modeEditTag, modeEditNote:
+				switch buf[0] {
+				case 27: // Esc
+					s.mode = modeNormal
+				case 13: // Enter — save
+					s.handleEditSave()
+				case 127, 8: // Backspace
+					if len(s.editBuf) > 0 {
+						runes := []rune(s.editBuf)
+						s.editBuf = string(runes[:len(runes)-1])
+					}
+				default:
+					if buf[0] >= 0x20 && buf[0] <= 0x7E {
+						s.editBuf += string(buf[0])
+					}
+				}
+				continue
+			}
+
+			// modeNormal handlers
 			switch buf[0] {
-			case 27: // Esc (lone byte = quit)
+			case 27: // Esc
 				return nil
 			case 13: // Enter
 				if len(s.filtered) > 0 {
@@ -232,20 +385,27 @@ func (s *Selector) Run() error {
 					}
 					s.applyAndReset()
 				}
+			case 4: // Ctrl+D — delete
+				if len(s.filtered) > 0 && s.OnDelete != nil {
+					s.mode = modeConfirmDelete
+				}
+			case 5: // Ctrl+E — edit
+				if len(s.filtered) > 0 && s.OnUpdate != nil {
+					s.mode = modeEditChoose
+				}
 			case 6: // Ctrl+F — toggle failed only
 				s.failOnly = !s.failOnly
 				s.applyAndReset()
 			case 18: // Ctrl+R — toggle regex mode
 				s.useRegex = !s.useRegex
 				s.applyAndReset()
-			case 127, 8: // Backspace (DEL or BS)
+			case 127, 8: // Backspace
 				if len(s.filter) > 0 {
 					runes := []rune(s.filter)
 					s.filter = string(runes[:len(runes)-1])
 					s.applyAndReset()
 				}
 			default:
-				// Printable ASCII
 				if buf[0] >= 0x20 && buf[0] <= 0x7E {
 					s.filter += string(buf[0])
 					s.applyAndReset()
