@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/cyb33rr/rtlog/internal/display"
 )
 
 // rtlogTag is appended to lines written by setup for safe identification during uninstall.
@@ -145,7 +147,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 	}
 
 	if _, err := exec.LookPath("rtlog"); err != nil {
-		fmt.Println("[!]  Warning: rtlog is not on your PATH — hooks won't work until you add it.")
+		display.Warn("rtlog is not on your PATH — hooks won't work until you add it.")
 	}
 
 	zshrc := filepath.Join(home, ".zshrc")

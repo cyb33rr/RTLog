@@ -2,10 +2,11 @@ package match
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cyb33rr/rtlog/internal/display"
 )
 
 var wrappers = map[string]bool{
@@ -36,7 +37,7 @@ func LoadTools(path string) (*Matcher, error) {
 		}
 		if strings.ContainsAny(line, "*?") {
 			if _, err := filepath.Match(line, ""); err != nil {
-				fmt.Fprintf(os.Stderr, "rtlog: warning: invalid glob pattern %q in tools.conf: %v\n", line, err)
+				display.Warn("invalid glob pattern %q in tools.conf: %v", line, err)
 				continue
 			}
 			m.globs = append(m.globs, line)

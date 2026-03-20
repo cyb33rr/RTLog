@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 
 	_ "modernc.org/sqlite"
@@ -78,7 +79,7 @@ func Open(dir, engagement string) (*DB, error) {
 	}
 
 	if version > schemaVersion {
-		fmt.Fprintf(os.Stderr, "warning: database schema version %d > expected %d; some features may not work correctly\n", version, schemaVersion)
+		display.Warn("database schema version %d > expected %d; some features may not work correctly", version, schemaVersion)
 	}
 
 	// Only create schema and stamp version on a fresh database.

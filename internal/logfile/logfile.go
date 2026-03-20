@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cyb33rr/rtlog/internal/display"
 )
 
 // LogEntry represents a single logged command.
@@ -57,7 +59,7 @@ func ValidateEngagementName(name string) error {
 func LogDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot determine home directory: %v\n", err)
+		display.Warn("cannot determine home directory: %v", err)
 		return filepath.Join(".", ".rt", "logs")
 	}
 	return filepath.Join(home, ".rt", "logs")

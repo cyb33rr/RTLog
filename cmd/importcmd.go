@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cyb33rr/rtlog/internal/db"
+	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/spf13/cobra"
 )
@@ -78,7 +79,7 @@ func importFile(path string) {
 			continue
 		}
 		if err := d.Insert(e); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: insert failed: %v\n", err)
+			display.Warn("insert failed: %v", err)
 			continue
 		}
 		existing[key] = true
@@ -86,7 +87,7 @@ func importFile(path string) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: error reading %s: %v\n", path, err)
+		display.Warn("error reading %s: %v", path, err)
 	}
 
 	fmt.Printf("Imported %d entries into engagement %q", imported, eng)

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cyb33rr/rtlog/internal/db"
+	"github.com/cyb33rr/rtlog/internal/display"
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/cyb33rr/rtlog/internal/match"
 	"github.com/cyb33rr/rtlog/internal/state"
@@ -154,7 +155,7 @@ func runLog(cmd *cobra.Command, args []string) {
 	if logCmdOutFile != "" {
 		data, err := os.ReadFile(logCmdOutFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not read out-file: %v\n", err)
+			display.Warn("could not read out-file: %v", err)
 		} else {
 			entry.Out = string(data)
 			os.Remove(logCmdOutFile)
