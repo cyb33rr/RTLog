@@ -139,6 +139,7 @@ func EngagementName(path string) string {
 // ToMap converts a LogEntry to a map for use with display functions.
 func ToMap(e LogEntry) map[string]interface{} {
 	return map[string]interface{}{
+		"id":    e.ID,
 		"ts":    e.Ts,
 		"epoch": e.Epoch,
 		"user":  e.User,
