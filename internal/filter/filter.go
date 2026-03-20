@@ -7,7 +7,8 @@ import (
 	"github.com/cyb33rr/rtlog/internal/logfile"
 )
 
-// fields returns the 5 searchable field values from a LogEntry.
+// fields returns the text fields searched during filter operations.
+// Metadata fields (ts, user, host, tty, out) are intentionally excluded.
 func fields(e logfile.LogEntry) [5]string {
 	return [5]string{e.Cmd, e.Tool, e.Cwd, e.Tag, e.Note}
 }
@@ -32,7 +33,9 @@ func MatchSubstring(entries []logfile.LogEntry, substr string) []logfile.LogEntr
 }
 
 // MatchRegex returns entries where any of the 5 searchable fields
-// matches the given regex pattern. Returns an error if the pattern is invalid.
+// matches the given regex pattern. Matching is case-sensitive; use (?i)
+// in the pattern for case-insensitive matching. Returns an error if the
+// pattern is invalid.
 func MatchRegex(entries []logfile.LogEntry, pattern string) ([]logfile.LogEntry, error) {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
