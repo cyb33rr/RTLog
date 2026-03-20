@@ -63,9 +63,19 @@ func runUninstall(cmd *cobra.Command, args []string) {
 	uninstallRemoveDir(rtDir)
 
 	// 4. Advise on binary removal
-	binPath := filepath.Join(dir, "rtlog")
-	fmt.Printf("[!]  Binary may be at %s\n", binPath)
-	fmt.Println("     Remove it with: rm", binPath)
+	if isGoInstall() {
+		binPath := filepath.Join(dir, "rtlog")
+		fmt.Printf("[!]  Binary may be at %s\n", binPath)
+		fmt.Println("     Remove it with: rm", binPath)
+	} else {
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Println("[!]  Could not resolve binary path; remove it manually.")
+		} else {
+			fmt.Printf("[!]  Binary is at %s\n", exePath)
+			fmt.Println("     Remove it with: rm", exePath)
+		}
+	}
 
 	fmt.Println()
 	fmt.Println("=== Uninstall complete ===")

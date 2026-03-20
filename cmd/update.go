@@ -13,7 +13,9 @@ var updateCmd = &cobra.Command{
 	Short: "Update rtlog to the latest version",
 	Long: `Update rtlog via 'go install' and re-run setup to refresh hooks and config.
 
-Requires Go toolchain.`,
+Requires Go toolchain. If rtlog was not installed via 'go install' (i.e. a
+manual/git install is detected), this command will exit early and advise you
+to update manually with 'git pull && make build'.`,
 	Args: cobra.NoArgs,
 	RunE: runUpdate,
 }
@@ -23,6 +25,11 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	if !isGoInstall() {
+		fmt.Println("rtlog was not installed via go install — update manually with git pull && make build")
+		return nil
+	}
+
 	fmt.Println("Updating rtlog...")
 	goCmd := exec.Command("go", "install", "github.com/cyb33rr/rtlog@latest")
 	goCmd.Stdout = os.Stdout
