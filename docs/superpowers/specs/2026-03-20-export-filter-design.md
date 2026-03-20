@@ -1,12 +1,12 @@
-# Export Filtering & Regex Search
+# Export Filtering & Search
 
 ## Problem
 
-`rtlog export` exports all entries unconditionally. Users need to export subsets filtered by tool, tag, date range, and free-text regex. Additionally, `rtlog show`'s keyword search uses literal substring matching (LIKE + `QuoteMeta`), limiting search power.
+`rtlog export` exports all entries unconditionally. Users need to export subsets filtered by tool, tag, date range, and free-text search. Additionally, `rtlog show` only supports literal substring matching — users need regex search as an option.
 
 ## Solution
 
-Add stackable filter flags to `export` and upgrade `show`'s search to regex.
+Add stackable filter flags to `export` and add regex search mode to both `export` and `show`.
 
 ## CLI Interface
 
@@ -25,27 +25,35 @@ New flags:
 | `--date`   | string | Single date YYYY-MM-DD                           |
 | `--from`   | string | Range start inclusive YYYY-MM-DD                 |
 | `--to`     | string | Range end inclusive YYYY-MM-DD                   |
-| `--filter` | string | Regex matched against cmd, tool, cwd, tag, note  |
+| `--filter` | string | Literal substring match against cmd, tool, cwd, tag, note |
+| `-r`       | string | Regex match against cmd, tool, cwd, tag, note             |
 
 Rules:
 - `--date` is mutually exclusive with `--from`/`--to`
 - `--from` and `--to` can each be used alone (open-ended range)
 - All flags combine with AND logic across different flag types
 - `--tool` and `--tag` use OR logic within their comma-separated values
-- Invalid `--filter` regex exits with a clear error message
+- `--filter` and `-r` can both be used (AND logic) but typically one or the other
+- Invalid `-r` regex exits with a clear error message
 
-Example:
+Examples:
 ```
-rtlog export csv --tool nmap,nxc --tag recon --from 2026-03-15 --to 2026-03-17 --filter "10\.0\.0\.\d+"
+rtlog export csv --tool nmap,nxc --tag recon --from 2026-03-15 --to 2026-03-17
+rtlog export csv --filter "10.0.0.1"
+rtlog export csv -r "10\.0\.0\.\d+"
 ```
 
 ### Show
 
-The keyword argument (`rtlog show <keyword>`) changes from literal substring matching to regex matching. Invalid regex prints an error and exits.
+Two search modes:
+- `rtlog show <keyword>` — literal substring match (existing behavior, unchanged)
+- `rtlog show -r <pattern>` — regex match
+
+Invalid regex with `-r` prints an error and exits. The `-r` flag and keyword argument are mutually exclusive.
 
 ## Architecture
 
-**Hybrid approach:** SQL-level filtering for structured fields (tool, tag, date/epoch) leveraging existing indices. Go-level filtering for the `--filter` regex using native `regexp`.
+**Hybrid approach:** SQL-level filtering for structured fields (tool, tag, date/epoch) leveraging existing indices. Go-level filtering for `--filter` (substring) and `-r` (regex) using native Go.
 
 ### Database Layer (`internal/db/db.go`)
 
@@ -67,19 +75,19 @@ When no structured filters are provided, equivalent to `LoadAll()`.
 
 Uses the existing `queryEntries` helper for row scanning.
 
-### Regex Filter (`internal/filter/filter.go`)
+### Search Filter (`internal/filter/filter.go`)
 
-New package with a single function:
+New package with two functions:
 
 ```go
+func MatchSubstring(entries []logfile.LogEntry, substr string) []logfile.LogEntry
 func MatchRegex(entries []logfile.LogEntry, pattern string) ([]logfile.LogEntry, error)
 ```
 
-- Compiles `pattern` with `regexp.Compile`
-- Returns error if pattern is invalid
-- Tests each entry against 5 fields: `cmd`, `tool`, `cwd`, `tag`, `note`
-- Entry matches if any field matches the regex
-- Returns filtered slice (empty slice, not nil, when no matches)
+Both test each entry against 5 fields: `cmd`, `tool`, `cwd`, `tag`, `note`. An entry matches if any field matches.
+
+- `MatchSubstring`: case-insensitive substring match (uses `strings.Contains` on lowered fields). Always succeeds.
+- `MatchRegex`: compiles `pattern` with `regexp.Compile`. Returns error if pattern is invalid. Returns filtered slice (empty slice, not nil, when no matches).
 
 ### Export Command (`cmd/export.go`)
 
@@ -87,32 +95,40 @@ Updated flow:
 
 1. Parse and validate flags
    - Mutual exclusivity: `--date` vs `--from`/`--to`
-   - Validate `--filter` regex at parse time
+   - Validate `-r` regex at parse time
    - Split `--tool` and `--tag` on commas
    - Validate date formats for `--date`, `--from`, `--to`
 2. Call `db.LoadFiltered(tools, tags, date, from, to)` instead of `db.LoadAll()`
-3. If `--filter` is set, pass results through `filter.MatchRegex()`
-4. If zero entries remain: print `"No entries match the given filters"` to stderr and exit (no file created)
-5. Otherwise pass to format-specific exporter as before
+3. If `--filter` is set, pass results through `filter.MatchSubstring()`
+4. If `-r` is set, pass results through `filter.MatchRegex()`
+5. If zero entries remain: print `"No entries match the given filters"` to stderr and exit (no file created)
+6. Otherwise pass to format-specific exporter as before
 
 ### Show Command (`cmd/show.go`)
 
-Updated search behavior:
+Two search modes:
 
-1. The keyword argument is compiled as a regex pattern (instead of being wrapped with `QuoteMeta`)
-2. Invalid regex prints a clear error and exits
-3. The DB-level `Search()`/`SearchByDate()` still does the initial LIKE query for broad matching
-4. Results are refined with `filter.MatchRegex()` to apply the actual regex
-5. Display highlighting uses the compiled regex directly (already supported by `FmtEntryHighlight`)
+**Literal mode** (`rtlog show keyword`) — unchanged behavior:
+1. Keyword passed to `Search()`/`SearchByDate()` for SQL LIKE matching
+2. Highlighting uses `regexp.QuoteMeta(keyword)` as before
+
+**Regex mode** (`rtlog show -r pattern`) — new:
+1. Validate regex at parse time; invalid regex prints error and exits
+2. DB-level `Search()` still does an initial broad LIKE query (using the raw pattern as a best-effort substring)
+3. Results refined with `filter.MatchRegex()` to apply the actual regex
+4. Display highlighting uses the compiled regex directly (already supported by `FmtEntryHighlight`)
+5. `-r` and keyword argument are mutually exclusive
 
 ## Testing
 
 ### `internal/filter/filter_test.go`
 
-- Regex matches across each of the 5 searchable fields individually
-- No-match returns empty slice
-- Invalid regex returns error
-- Empty pattern returns all entries
+- `MatchSubstring`: case-insensitive match across each of the 5 fields
+- `MatchSubstring`: no-match returns empty slice
+- `MatchRegex`: regex matches across each of the 5 searchable fields individually
+- `MatchRegex`: no-match returns empty slice
+- `MatchRegex`: invalid regex returns error
+- `MatchRegex`: empty pattern returns all entries
 
 ### `internal/db/db_test.go`
 
@@ -127,11 +143,13 @@ Updated search behavior:
 ### `cmd/export_test.go`
 
 - `--date` and `--from`/`--to` mutual exclusivity produces error
-- Invalid `--filter` regex produces error
+- Invalid `-r` regex produces error
 - Zero-match scenario prints message, no file created
 - Comma-separated `--tool` and `--tag` parsing
 
 ### `cmd/show_test.go`
 
-- Regex keyword search works (e.g., `10\.0\.0\.\d+`)
-- Invalid regex prints error message
+- Literal keyword search unchanged
+- `-r` regex search works (e.g., `10\.0\.0\.\d+`)
+- Invalid `-r` regex prints error message
+- `-r` and keyword argument mutual exclusivity
