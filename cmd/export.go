@@ -65,10 +65,14 @@ var exportCmd = &cobra.Command{
 		// Parse comma-separated tools and tags
 		var tools, tags []string
 		if exportTool != "" {
-			tools = strings.Split(exportTool, ",")
+			for _, t := range strings.Split(exportTool, ",") {
+				tools = append(tools, strings.TrimSpace(t))
+			}
 		}
 		if exportTag != "" {
-			tags = strings.Split(exportTag, ",")
+			for _, t := range strings.Split(exportTag, ",") {
+				tags = append(tags, strings.TrimSpace(t))
+			}
 		}
 
 		path, err := logfile.GetLogPath(engagementFlag)
