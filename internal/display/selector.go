@@ -536,7 +536,7 @@ func (s *Selector) render() {
 		}
 	}
 
-	entrySlots := h - 2 - len(outLines) - wrapExtra
+	entrySlots := h - 3 - len(outLines) - wrapExtra
 	if entrySlots < 1 {
 		entrySlots = 1
 	}
@@ -589,6 +589,10 @@ func (s *Selector) render() {
 	}
 
 	writeln("")
+	if s.mode == modeNormal {
+		hint := Colorize("  Enter expand  Tab tag  ^D del  ^E edit  ^R regex  ^F fail  Esc quit", Dim)
+		writeln(hint)
+	}
 	b.WriteString(truncateVisible(s.renderFilterBar(), w))
 
 	os.Stdout.WriteString(b.String())
