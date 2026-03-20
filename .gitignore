@@ -12,6 +12,8 @@ PROMPT.md
 .done
 .claude/
 tasks/
+.superpowers/
+docs/superpowers/
 # Editor/IDE
 .vscode/
 .idea/
