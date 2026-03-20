@@ -114,8 +114,8 @@ Two search modes:
 
 **Regex mode** (`rtlog show -r pattern`) — new:
 1. Validate regex at parse time; invalid regex prints error and exits
-2. DB-level `Search()` still does an initial broad LIKE query (using the raw pattern as a best-effort substring)
-3. Results refined with `filter.MatchRegex()` to apply the actual regex
+2. Use `db.LoadAll()` (or `db.LoadByDate()` if `--date`/`--today` is set) — no SQL LIKE pre-filter, since regex metacharacters don't map to LIKE patterns
+3. Results filtered with `filter.MatchRegex()` to apply the regex in Go
 4. Display highlighting uses the compiled regex directly (already supported by `FmtEntryHighlight`)
 5. `-r` and keyword argument are mutually exclusive
 
@@ -125,7 +125,7 @@ The TUI's type-to-filter currently uses literal substring matching via `ApplyFil
 
 - **Ctrl+R** toggles between literal and regex mode
 - Filter bar shows mode indicator: `▸ pattern_` (literal) vs `▸ /pattern/_ [regex]` (regex)
-- In regex mode, `ApplyFilters` compiles the filter with `regexp.Compile`
+- In regex mode, `ApplyFilters` accepts a `useRegex bool` parameter. When true, it compiles the text filter with `regexp.Compile` and matches against the same 5 fields using `regexp.MatchString` instead of `strings.Contains`. The regex logic lives directly in `ApplyFilters` (duplicated from `internal/filter`) since `ApplyFilters` operates on `display.Entry` maps, not `logfile.LogEntry` structs. This is acceptable because the matching logic is simple (test 5 fields against a pattern).
   - If the pattern is valid: filter entries by regex match across the same 5 fields
   - If the pattern is invalid (incomplete mid-typing): show `[invalid regex]` in the filter bar, keep showing previous valid results (don't clear the list)
 - Ctrl+R with an empty filter just toggles the mode indicator
