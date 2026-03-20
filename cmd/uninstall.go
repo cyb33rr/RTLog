@@ -22,7 +22,7 @@ var uninstallCmd = &cobra.Command{
   1. Remove hook and PATH export lines from ~/.zshrc and ~/.bashrc
   2. Remove non-interactive hook lines from ~/.zshenv
   3. Optionally delete ~/.rt/ (prompts unless -y)
-  4. Advise how to remove the binary from Go's bin directory`,
+  4. Advise how to remove the rtlog binary`,
 	Args: cobra.NoArgs,
 	Run:  runUninstall,
 }
