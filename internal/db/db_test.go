@@ -488,6 +488,155 @@ func TestReopenExistingDB(t *testing.T) {
 	}
 }
 
+// filteredEntries returns diverse entries for LoadFiltered tests.
+func filteredEntries() []logfile.LogEntry {
+	return []logfile.LogEntry{
+		{Ts: "2025-01-15T10:00:00Z", Epoch: 1736935200, User: "op", Host: "kali", Cwd: "/tmp", Tool: "nmap", Cmd: "nmap -sV 10.0.0.1", Tag: "recon"},
+		{Ts: "2025-01-15T11:00:00Z", Epoch: 1736938800, User: "op", Host: "kali", Cwd: "/tmp", Tool: "gobuster", Cmd: "gobuster dir -u http://target", Tag: "recon"},
+		{Ts: "2025-01-16T09:00:00Z", Epoch: 1737018000, User: "op", Host: "kali", Cwd: "/tmp", Tool: "nmap", Cmd: "nmap -p- 10.0.0.2", Tag: "exploitation"},
+		{Ts: "2025-01-17T14:00:00Z", Epoch: 1737122400, User: "op", Host: "kali", Cwd: "/tmp", Tool: "evil-winrm", Cmd: "evil-winrm -i 10.0.0.1", Tag: "exploitation"},
+	}
+}
+
+func insertFiltered(t *testing.T, d *DB) {
+	t.Helper()
+	for _, e := range filteredEntries() {
+		if err := d.Insert(e); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+}
+
+func TestLoadFilteredNoFilters(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, nil, "", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 4 {
+		t.Errorf("got %d, want 4 (no filters = all)", len(entries))
+	}
+}
+
+func TestLoadFilteredByTool(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered([]string{"nmap"}, nil, "", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("got %d, want 2 (two nmap entries)", len(entries))
+	}
+}
+
+func TestLoadFilteredByMultipleTools(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered([]string{"nmap", "gobuster"}, nil, "", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("got %d, want 3 (nmap + gobuster)", len(entries))
+	}
+}
+
+func TestLoadFilteredByTag(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, []string{"recon"}, "", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("got %d, want 2 (two recon entries)", len(entries))
+	}
+}
+
+func TestLoadFilteredByDate(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, nil, "2025-01-15", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("got %d, want 2 (two entries on 2025-01-15)", len(entries))
+	}
+}
+
+func TestLoadFilteredByFrom(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, nil, "", "2025-01-16", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("got %d, want 2 (entries from 01-16 onward)", len(entries))
+	}
+}
+
+func TestLoadFilteredByTo(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, nil, "", "", "2025-01-15")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("got %d, want 2 (entries up to 01-15)", len(entries))
+	}
+}
+
+func TestLoadFilteredByFromTo(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered(nil, nil, "", "2025-01-15", "2025-01-16")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("got %d, want 3 (entries from 01-15 through 01-16)", len(entries))
+	}
+}
+
+func TestLoadFilteredCombined(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered([]string{"nmap"}, []string{"recon"}, "", "2025-01-15", "2025-01-15")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("got %d, want 1 (nmap + recon + date range)", len(entries))
+	}
+}
+
+func TestLoadFilteredNoMatches(t *testing.T) {
+	d := openTestDB(t)
+	insertFiltered(t, d)
+
+	entries, err := d.LoadFiltered([]string{"sqlmap"}, nil, "", "", "")
+	if err != nil {
+		t.Fatalf("LoadFiltered: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("got %d, want 0", len(entries))
+	}
+}
+
 func TestSearchByDate(t *testing.T) {
 	d := openTestDB(t)
 

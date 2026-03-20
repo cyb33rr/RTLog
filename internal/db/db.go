@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cyb33rr/rtlog/internal/logfile"
 
@@ -156,6 +157,67 @@ func (d *DB) SearchByDate(keyword, dateStr string) ([]logfile.LogEntry, error) {
 		 ORDER BY id ASC`,
 		dateStr+"%", pattern, pattern, pattern, pattern, pattern,
 	)
+}
+
+// LoadFiltered returns entries matching the given structured filters.
+// All non-empty filters combine with AND logic.
+// tools/tags use OR logic within (IN clause).
+// date uses ts LIKE prefix match.
+// from/to use epoch range (inclusive, parsed as YYYY-MM-DD).
+func (d *DB) LoadFiltered(tools []string, tags []string, date, from, to string) ([]logfile.LogEntry, error) {
+	query := "SELECT id, ts, epoch, user, host, tty, cwd, tool, cmd, exit, dur, tag, note, out FROM entries"
+	var clauses []string
+	var args []interface{}
+
+	if len(tools) > 0 {
+		placeholders := make([]string, len(tools))
+		for i, t := range tools {
+			placeholders[i] = "?"
+			args = append(args, t)
+		}
+		clauses = append(clauses, "tool IN ("+strings.Join(placeholders, ", ")+")")
+	}
+
+	if len(tags) > 0 {
+		placeholders := make([]string, len(tags))
+		for i, t := range tags {
+			placeholders[i] = "?"
+			args = append(args, t)
+		}
+		clauses = append(clauses, "tag IN ("+strings.Join(placeholders, ", ")+")")
+	}
+
+	if date != "" {
+		clauses = append(clauses, "ts LIKE ?")
+		args = append(args, date+"%")
+	}
+
+	if from != "" {
+		t, err := time.Parse("2006-01-02", from)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --from date: %w", err)
+		}
+		clauses = append(clauses, "epoch >= ?")
+		args = append(args, t.UTC().Unix())
+	}
+
+	if to != "" {
+		t, err := time.Parse("2006-01-02", to)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --to date: %w", err)
+		}
+		// End of day: 23:59:59
+		endOfDay := t.UTC().Add(24*time.Hour - time.Second)
+		clauses = append(clauses, "epoch <= ?")
+		args = append(args, endOfDay.Unix())
+	}
+
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	query += " ORDER BY id ASC"
+
+	return d.queryEntries(query, args...)
 }
 
 // Count returns the total number of entries.
