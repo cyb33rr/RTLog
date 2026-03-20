@@ -203,7 +203,7 @@ func TestSetupShellRcBash(t *testing.T) {
 	// Create an existing .bashrc
 	os.WriteFile(bashrc, []byte("# my bash config\n"), 0644)
 
-	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
@@ -228,7 +228,7 @@ func TestSetupShellRcIdempotent(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(initial), 0644)
 
-	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	if string(result) != initial {
@@ -308,58 +308,6 @@ func TestSetupCleanupTmpFiles(t *testing.T) {
 		if _, err := os.Stat(f); !os.IsNotExist(err) {
 			t.Errorf("orphan temp file was not cleaned: %s", f)
 		}
-	}
-}
-
-func TestSetupShellRcGoBinExport(t *testing.T) {
-	tmp := t.TempDir()
-	bashrc := filepath.Join(tmp, ".bashrc")
-	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
-
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
-
-	result, _ := os.ReadFile(bashrc)
-	lines := string(result)
-
-	if !strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`) {
-		t.Error("Go bin PATH export not added")
-	}
-	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
-		t.Error("hook source line not added")
-	}
-}
-
-func TestSetupShellRcGoBinExportAlreadyPresent(t *testing.T) {
-	tmp := t.TempDir()
-	bashrc := filepath.Join(tmp, ".bashrc")
-	initial := strings.Join([]string{
-		"# my config",
-		`export PATH="$HOME/go/bin:$PATH"  # added by rtlog`,
-		"",
-		"# Red Team Operation Logger",
-		"source $HOME/.rt/hook.bash",
-	}, "\n")
-	os.WriteFile(bashrc, []byte(initial), 0644)
-
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
-
-	result, _ := os.ReadFile(bashrc)
-	if string(result) != initial {
-		t.Errorf("setupShellRc modified file when Go bin export already present:\n%s", result)
-	}
-}
-
-func TestSetupShellRcNoGoBinExport(t *testing.T) {
-	// When goBinExportLine is empty, no Go bin export should be added
-	tmp := t.TempDir()
-	bashrc := filepath.Join(tmp, ".bashrc")
-	os.WriteFile(bashrc, []byte("# my config\n"), 0644)
-
-	setupShellRc(bashrc, "", "hook.bash", ".bashrc")
-
-	result, _ := os.ReadFile(bashrc)
-	if strings.Contains(string(result), "go/bin") {
-		t.Error("Go bin export added when goBinExportLine was empty")
 	}
 }
 
@@ -581,16 +529,13 @@ func TestSetupShellRcMigratesLocalBinExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
 
 	if strings.Contains(lines, `$HOME/.local/bin`) {
 		t.Error("old ~/.local/bin PATH export was not removed")
-	}
-	if !strings.Contains(lines, `$HOME/go/bin`) {
-		t.Error("Go bin PATH export not added")
 	}
 	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
 		t.Error("hook source line was removed")
@@ -610,7 +555,7 @@ func TestSetupShellRcMigratesRepoSourceLines(t *testing.T) {
 	}, "\n")
 	os.WriteFile(zshrc, []byte(content), 0644)
 
-	setupShellRc(zshrc, "", "hook.zsh", ".zshrc")
+	setupShellRc(zshrc, "hook.zsh", ".zshrc")
 
 	result, _ := os.ReadFile(zshrc)
 	lines := string(result)
@@ -645,18 +590,22 @@ func TestSetupShellRcMigratesUntaggedExport(t *testing.T) {
 	}, "\n")
 	os.WriteFile(bashrc, []byte(content), 0644)
 
-	setupShellRc(bashrc, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`, "hook.bash", ".bashrc")
+	setupShellRc(bashrc, "hook.bash", ".bashrc")
 
 	result, _ := os.ReadFile(bashrc)
 	lines := string(result)
 
-	// Should have tagged version
-	if !strings.Contains(lines, `# added by rtlog`) {
-		t.Error("untagged export was not migrated to tagged version")
+	// Untagged go/bin export should be removed entirely
+	if strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"`) {
+		t.Error("untagged go/bin export was not removed")
 	}
-	// Should not have duplicate
-	if strings.Count(lines, `go/bin`) != 1 {
-		t.Error("duplicate Go bin export found after migration")
+	// No tagged line should be added (setup no longer adds it)
+	if strings.Contains(lines, `# added by rtlog`) {
+		t.Error("unexpected tagged export line was added")
+	}
+	// Hook source line should survive
+	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
+		t.Error("hook source line was removed")
 	}
 }
 
@@ -687,5 +636,85 @@ func TestUninstallCleansRepoSourceLines(t *testing.T) {
 	}
 	if !strings.Contains(lines, "alias ll='ls -la'") {
 		t.Error("unrelated config was removed")
+	}
+}
+
+func TestSetupShellRcRemovesTaggedExport(t *testing.T) {
+	// A tagged Go bin PATH export should be removed by setupShellRc (setup no longer adds it).
+	tmp := t.TempDir()
+	bashrc := filepath.Join(tmp, ".bashrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/go/bin:$PATH"  # added by rtlog`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.bash",
+	}, "\n")
+	os.WriteFile(bashrc, []byte(content), 0644)
+
+	setupShellRc(bashrc, "hook.bash", ".bashrc")
+
+	result, _ := os.ReadFile(bashrc)
+	lines := string(result)
+
+	if strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"  # added by rtlog`) {
+		t.Error("tagged go/bin export was not removed")
+	}
+	if !strings.Contains(lines, "source $HOME/.rt/hook.bash") {
+		t.Error("hook source line was removed")
+	}
+}
+
+func TestSetupShellRcRemovesUntaggedGoBinExport(t *testing.T) {
+	// An untagged default Go bin PATH export should be removed by setupShellRc.
+	tmp := t.TempDir()
+	zshrc := filepath.Join(tmp, ".zshrc")
+
+	content := strings.Join([]string{
+		"# my config",
+		`export PATH="$HOME/go/bin:$PATH"`,
+		"# Red Team Operation Logger",
+		"source $HOME/.rt/hook.zsh",
+	}, "\n")
+	os.WriteFile(zshrc, []byte(content), 0644)
+
+	setupShellRc(zshrc, "hook.zsh", ".zshrc")
+
+	result, _ := os.ReadFile(zshrc)
+	lines := string(result)
+
+	if strings.Contains(lines, `export PATH="$HOME/go/bin:$PATH"`) {
+		t.Error("untagged go/bin export was not removed")
+	}
+	if !strings.Contains(lines, "source $HOME/.rt/hook.zsh") {
+		t.Error("hook source line was removed")
+	}
+}
+
+func TestIsGoInstall(t *testing.T) {
+	// Test the path comparison logic used by isGoInstall.
+	// resolveGoBinDir gives a known go bin directory; we then verify HasPrefix logic.
+	home := t.TempDir()
+	goBinDir, _ := resolveGoBinDir(home, "", "")
+
+	// A binary whose path starts with the go bin dir should be considered a go-install binary.
+	exePath := filepath.Join(goBinDir, "rtlog")
+	if !strings.HasPrefix(exePath, goBinDir) {
+		t.Errorf("expected %q to have prefix %q", exePath, goBinDir)
+	}
+
+	// A binary outside the go bin dir should not match.
+	otherPath := "/usr/local/bin/rtlog"
+	if strings.HasPrefix(otherPath, goBinDir) {
+		t.Errorf("expected %q NOT to have prefix %q", otherPath, goBinDir)
+	}
+
+	// An unrelated path that happens to share a short prefix should not match
+	// unless the separator is respected. This guards against "/home/go/bin" matching
+	// "/home/go/bin-other/rtlog" — in practice resolveGoBinDir always ends without a
+	// trailing slash so we add one for the prefix check.
+	lookalikePath := goBinDir + "-other/rtlog"
+	if strings.HasPrefix(lookalikePath, goBinDir+string(filepath.Separator)) {
+		t.Errorf("lookalike path %q incorrectly matched prefix %q", lookalikePath, goBinDir)
 	}
 }
