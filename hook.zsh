@@ -139,7 +139,7 @@ _rtlog_preexec() {
     if [[ "$RTLOG_CAPTURE" == "1" ]]; then
         _rtlog_tmpfile=$(mktemp /tmp/.rtlog_out.XXXXXXXX)
         exec {_rtlog_fd_out}>&1 {_rtlog_fd_err}>&2
-        exec > >(tee -- "$_rtlog_tmpfile") 2>&1
+        exec > >(trap - EXIT DEBUG INT TERM HUP ZERR; exec tee -- "$_rtlog_tmpfile") 2>&1
         _rtlog_capturing=1
         (( RTLOG_DEBUG )) && echo "[rtlog:preexec] capturing output" >&2
     fi

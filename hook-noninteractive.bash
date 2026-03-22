@@ -106,7 +106,7 @@ _rtlog_ni_debug_handler() {
     if [[ "$_rtlog_ni_capture" == "1" ]]; then
         _rtlog_ni_outfile=$(mktemp /tmp/.rtlog_ni_out.XXXXXXXX)
         exec {_rtlog_ni_fd_out}>&1 {_rtlog_ni_fd_err}>&2
-        exec > >(tee -- "$_rtlog_ni_outfile") 2>&1
+        exec > >(trap - EXIT DEBUG INT TERM HUP ERR; exec tee -- "$_rtlog_ni_outfile") 2>&1
         _rtlog_ni_capturing=1
     fi
 }
