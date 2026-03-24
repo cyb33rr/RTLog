@@ -13,7 +13,7 @@ var outputFlag bool
 
 var onCmd = &cobra.Command{
 	Use:   "on",
-	Short: "Enable logging (--output for capture)",
+	Short: "Enable logging and output capture (--output for capture only)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if outputFlag {
@@ -24,17 +24,17 @@ var onCmd = &cobra.Command{
 			fmt.Println("[rtlog] Output capture enabled")
 			return
 		}
-		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "1"}); err != nil {
+		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "1", state.KeyCapture: "1"}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("[rtlog] Logging enabled")
+		fmt.Println("[rtlog] Logging enabled (with output capture)")
 	},
 }
 
 var offCmd = &cobra.Command{
 	Use:   "off",
-	Short: "Disable logging (--output for capture)",
+	Short: "Disable logging and output capture (--output for capture only)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if outputFlag {
@@ -45,11 +45,11 @@ var offCmd = &cobra.Command{
 			fmt.Println("[rtlog] Output capture disabled")
 			return
 		}
-		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "0"}); err != nil {
+		if _, err := state.UpdateState(map[string]string{state.KeyEnabled: "0", state.KeyCapture: "0"}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("[rtlog] Logging disabled")
+		fmt.Println("[rtlog] Logging disabled (including output capture)")
 	},
 }
 
