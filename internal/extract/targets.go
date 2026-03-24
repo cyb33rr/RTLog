@@ -147,6 +147,21 @@ func isVersionContext(cmd string, matchStart int) bool {
 	return false
 }
 
+// isPercentEncoded returns true if matchStart falls inside a percent-encoded
+// byte (%XX). This catches OGNL expressions like %3d@ognl.OgnlContext where
+// the hex digits before @ look like a username to RE_USER_AT_HOST.
+func isPercentEncoded(cmd string, matchStart int) bool {
+	// Check if matchStart-1 is '%' (username matched 2 hex chars: %XX@host)
+	if matchStart >= 1 && cmd[matchStart-1] == '%' {
+		return true
+	}
+	// Check if matchStart-2 is '%' (username matched 1 hex char: %X?@host — partial)
+	if matchStart >= 2 && cmd[matchStart-2] == '%' {
+		return true
+	}
+	return false
+}
+
 // isPathContext returns true if hostname-like match is preceded by path separators.
 func isPathContext(cmd string, matchStart int) bool {
 	if matchStart <= 0 {
@@ -296,6 +311,9 @@ func ExtractTargets(cmd, tool string) *TargetResult {
 
 	// Pass 2: user@host / domain/user@host (always - structurally specific)
 	for _, m := range RE_USER_AT_HOST.FindAllStringSubmatchIndex(cmd, -1) {
+		if isPercentEncoded(cmd, m[0]) {
+			continue
+		}
 		host := cmd[m[2]:m[3]]
 		if isValidIPv4(host) {
 			addIP(host, "", "", m[2], m[3])
