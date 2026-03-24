@@ -10,6 +10,7 @@ import (
 	"github.com/cyb33rr/rtlog/internal/logfile"
 	"github.com/cyb33rr/rtlog/internal/timeutil"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var timelineCmd = &cobra.Command{
@@ -65,6 +66,11 @@ var timelineCmd = &cobra.Command{
 		// Sort dates
 		sort.Strings(dateOrder)
 
+		termWidth := 80
+		if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
+			termWidth = w
+		}
+
 		for _, dateKey := range dateOrder {
 			fmt.Println(display.Colorize(fmt.Sprintf("\n=== %s ===", dateKey), display.Bold))
 
@@ -85,21 +91,9 @@ var timelineCmd = &cobra.Command{
 			}
 
 			for _, tag := range tagOrder {
-				fmt.Println(display.Colorize(fmt.Sprintf("  [%s]", tag), display.Yellow))
+				fmt.Println(display.Colorize(fmt.Sprintf("    [%s]", tag), display.Yellow))
 				for _, entry := range byTag[tag] {
-					tsStr := formatTimeOnly(entry.Ts)
-					cmdStr := strings.ReplaceAll(entry.Cmd, "\n", " ")
-					dur := entry.Dur
-					exitCode := entry.Exit
-					exitColor := display.Green
-					if exitCode != 0 {
-						exitColor = display.Red
-					}
-					fmt.Printf("    %s  %s  (%s, %s)\n",
-						tsStr, cmdStr,
-						display.Colorize(fmt.Sprintf("%gs", dur), display.Dim),
-						display.Colorize(fmt.Sprintf("exit:%d", exitCode), exitColor),
-					)
+					printTimelineEntry(entry, termWidth)
 				}
 			}
 		}
@@ -114,6 +108,53 @@ var timelineCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+// printTimelineEntry renders a single entry right-aligned to the terminal width.
+// Format: "      HH:MM:SS  <command><padding><duration>  <exit:N if non-zero>"
+func printTimelineEntry(entry logfile.LogEntry, termWidth int) {
+	const prefix = "      " // 6-space indent
+	tsStr := formatTimeOnly(entry.Ts)
+	cmdStr := strings.ReplaceAll(entry.Cmd, "\n", " ")
+
+	// Format optional exit prefix and duration
+	var exitPrefix string
+	exitPrefixWidth := 0
+	if entry.Exit != 0 {
+		exitPrefix = display.Colorize(fmt.Sprintf("exit:%d", entry.Exit), display.Red) + "  "
+		exitPrefixWidth = len(fmt.Sprintf("exit:%d", entry.Exit)) + 2 // "exit:N  "
+	}
+
+	durRaw := fmt.Sprintf("%gs", entry.Dur)
+	durSlotWidth := 7
+	if len(durRaw) > durSlotWidth {
+		durSlotWidth = len(durRaw)
+	}
+	durPadded := fmt.Sprintf("%*s", durSlotWidth, durRaw)
+	durStr := display.Colorize(durPadded, display.Dim)
+
+	// Available width for command: total - prefix - "HH:MM:SS" - "  " - gutter(2) - exitPrefix - durSlot
+	leftWidth := len(prefix) + 8 + 2 // "      " + "HH:MM:SS" + "  "
+	rightWidth := exitPrefixWidth + durSlotWidth
+	cmdBudget := termWidth - leftWidth - 2 - rightWidth // 2 = minimum gutter
+	if cmdBudget < 10 {
+		cmdBudget = 10
+	}
+
+	// Truncate command if needed
+	cmdRunes := []rune(cmdStr)
+	if len(cmdRunes) > cmdBudget {
+		cmdStr = string(cmdRunes[:cmdBudget-1]) + "…"
+	}
+
+	// Calculate padding between command and right-side metadata
+	usedWidth := leftWidth + len([]rune(cmdStr)) + rightWidth
+	padding := termWidth - usedWidth
+	if padding < 2 {
+		padding = 2
+	}
+
+	fmt.Printf("%s%s  %s%s%s%s\n", prefix, tsStr, cmdStr, strings.Repeat(" ", padding), exitPrefix, durStr)
 }
 
 // parseEntryDate extracts YYYY-MM-DD from an ISO timestamp.
