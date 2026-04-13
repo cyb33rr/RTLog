@@ -7,6 +7,13 @@
 [[ -v _RTLOG_NI_LOADED ]] && return 0
 _RTLOG_NI_LOADED=1
 
+# --- Prevent recursive loading across exec boundaries ---
+# BASH_ENV is re-sourced by every new bash process (e.g. pyenv shims,
+# pyenv-exec, internal tool scripts).  The per-process _RTLOG_NI_LOADED
+# guard above doesn't survive exec.  Export a flag so sub-processes skip.
+[[ -n "${__RTLOG_NI_ACTIVE:-}" ]] && return 0
+export __RTLOG_NI_ACTIVE=1
+
 # --- Fast bail: no state file means rtlog isn't set up ---
 _rtlog_ni_state_file="${HOME}/.rt/state"
 [[ -f "$_rtlog_ni_state_file" ]] || return 0
@@ -125,7 +132,7 @@ _rtlog_ni_exit_handler() {
 
     if [[ -z "$_rtlog_ni_pending_tool" ]]; then
         [[ -n "$_rtlog_ni_outfile" ]] && command rm -f "$_rtlog_ni_outfile" 2>/dev/null
-        return
+        return "$rc"
     fi
 
     # Duration (use awk for float arithmetic)
@@ -148,6 +155,8 @@ _rtlog_ni_exit_handler() {
 
     [[ -n "$_rtlog_ni_outfile" ]] && command rm -f "$_rtlog_ni_outfile" 2>/dev/null
     _rtlog_ni_outfile=""
+
+    return "$rc"
 }
 
 # --- Register traps ---
